@@ -113,14 +113,7 @@ Keep the root `requirements.txt` for dev tools only (pytest, black, flake8) plus
 
 ### 1.3 Write mock CLI scripts
 
-Two executable Python scripts in `mock-cli/`:
-
-**`mock-cli/cacheserve-cli`** — A Python script (with `#!/usr/bin/env python3` shebang) that:
-- Parses the command from argv (e.g., `cacheserve-cli cache.statistics`)
-- Returns realistic JSON to stdout for each supported command
-- Supports: `cache.statistics`, `server.status`, `server.version`, `cache.summary`, `dns.config show zones`, `dns.config show all`, `dns.statistics`, `server.info`
-- Returns exit code 1 with stderr message for unknown commands
-- Uses a dict mapping command patterns to response generators with slightly randomized values (so each call looks different)
+One executable Python script in `mock-cli/` (CacheServe is deferred — see Risks and Open Questions #8):
 
 **`mock-cli/statmon`** — Must implement the real `querystore.*` commands from `docs/statmon-prompt.txt`:
 
@@ -147,7 +140,7 @@ The mock must handle:
 - S-expression filter strings: The mock doesn't need to fully parse these, but should accept them without error. Basic recognition (extracting domain or client-address from the filter for varying mock output) is a nice-to-have.
 - Return JSON output that looks like realistic DNS query data (client IPs, domain names, query types, result codes, timestamps, byte counts).
 
-Both scripts should produce output with slightly randomized values (seeded by `NODE_NAME` environment variable) so results differ per node but are reproducible.
+The mock script should produce output with slightly randomized values (seeded by `NODE_NAME` environment variable) so results differ per node but are reproducible.
 
 ### 1.4 Write dev config files
 
@@ -164,7 +157,7 @@ statmon:
       - "querystore.*"           # All other querystore commands are read-only
 ```
 
-The CacheServe rules remain as in the design doc.
+CacheServe is deferred — omit from dev configs for now, or include as a no-op stub.
 
 ### 1.5 Rewrite `setup.sh`
 
@@ -204,7 +197,7 @@ Remove PyTorch/CUDA steps. New flow:
 ### 2.3 `statmon_mcp/server.py` — MCP server with tool handlers
 
 - Load config from `/etc/statmon-mcp/config.yaml` (overridable via `STATMON_MCP_CONFIG` env var for flexibility).
-- Create two MCP tools: `cacheserve` and `statmon`, following the design's tool definitions.
+- Create the `statmon` MCP tool following the design's tool definition. CacheServe is deferred; the server should only expose `statmon` for now.
 - Each tool handler: check command filter → run CLI → wrap in response envelope with node name.
 - Wire up the MCP `Server` with SSE transport via Starlette/ASGI.
 - The server itself is a Starlette ASGI app so that `uvicorn` can run it directly.
@@ -261,9 +254,9 @@ As specified in the design doc. Python 3.12-slim base, install from pyproject.to
 ### 3.3 `statmon_chat/system_prompt.py` — Prompt builder
 
 - `build_system_prompt(nodes: list[NodeInfo]) -> str` — Constructs the full system prompt.
-- The static part has two sections:
-  - **CacheServe CLI reference** — Needs to be written (the design doc has a sketch; we need a concise man-page-style reference for the allowed CacheServe commands).
+- The static part covers:
   - **Statmon Querystore CLI reference** — Use `docs/statmon-prompt.txt` as the basis. This is the real CLI documentation and should be included nearly verbatim in the system prompt.
+  - **CacheServe** — Deferred. Include a placeholder note in the system prompt indicating CacheServe support is not yet available.
 - The dynamic part (available nodes list) is injected based on the currently connected nodes from the MCP pool.
 - **Investigation patterns** — The design doc already has these written with real `querystore.*` commands. Use them as the basis for the system prompt's investigation guidance.
 - Keep the prompt in a separate file (`statmon_chat/prompt.txt` or similar) for easy iteration without code changes.
@@ -394,4 +387,4 @@ Steps 1-6 can be built and verified without an Anthropic API key. Steps 7-14 req
    - The LLM must learn to construct these filters correctly. The system prompt must include enough examples (the 5 examples in `statmon-prompt.txt` are a good start). We may need to iterate on the prompt to get reliable filter generation.
    - The CLI executor must preserve quoted filter strings intact when splitting arguments. `shlex.split()` handles this, but we need tests confirming it works with the real S-expression examples.
 
-8. **Missing CacheServe CLI reference:** We have the real Statmon reference (`docs/statmon-prompt.txt`) but the CacheServe CLI reference in the design doc is a sketch based on expected commands. We should either obtain the real CacheServe CLI docs or clearly mark the CacheServe portion of the system prompt as placeholder. The mock CLI and system prompt should be consistent with each other regardless.
+8. **CacheServe CLI deferred:** **Decision:** Only the Statmon (`querystore.*`) tool is implemented for now. CacheServe is deferred until the real CLI reference documentation is obtained. The MCP server exposes only the `statmon` tool, the mock CLI only covers `statmon`, and the system prompt marks CacheServe as not yet available. When CacheServe is added later, it will need: a real CLI reference doc, mock CLI script, allow/deny config rules, MCP tool handler, and system prompt section.
