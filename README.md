@@ -1,0 +1,1 @@
+# statmon-ai-aggregator
