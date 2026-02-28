@@ -256,6 +256,7 @@ As specified in the design doc. Python 3.12-slim base, install from pyproject.to
 - Use the async Anthropic client (`anthropic.AsyncAnthropic`) since the rest of the app is async.
 - **Guard against infinite loops:** Set a max iteration count (e.g., 10 tool-call rounds per turn). If exceeded, return an error message.
 - Error handling: If a tool call fails (MCP connection error), return a tool_result with `is_error=True` so Claude can gracefully handle it.
+- **Response truncation:** Before sending tool results to the Anthropic API, truncate any result exceeding 15KB. Append a note like `"\n\n[truncated — original size: {n}KB]"` so the LLM knows the output was clipped.
 
 ### 3.3 `statmon_chat/system_prompt.py` — Prompt builder
 
@@ -385,7 +386,7 @@ Steps 1-6 can be built and verified without an Anthropic API key. Steps 7-14 req
 
 4. **Tool name validation:** The Anthropic API has rules about tool name format (e.g., `^[a-zA-Z0-9_-]{1,64}$`). Verify that `dns_node_a__cacheserve` is accepted. The double underscore should be fine.
 
-5. **Response size:** If a Statmon query returns a very large result (thousands of query log entries), the tool result content sent to the Anthropic API could be large. Consider truncating tool results to a reasonable size (e.g., 50KB) with a note that results were truncated.
+5. **Response size:** If a Statmon query returns a very large result (thousands of query log entries), the tool result content sent to the Anthropic API could be large. **Decision:** Truncate tool results to 15KB with a note appended indicating the output was truncated and the original size.
 
 6. **Concurrent tool calls:** The Anthropic API can return multiple `tool_use` blocks in a single response (e.g., querying both nodes simultaneously). The chat app should execute these in parallel (`asyncio.gather`) rather than sequentially for better latency.
 
