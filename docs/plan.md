@@ -4,32 +4,16 @@ This plan translates `docs/design.md` into concrete implementation steps. It fol
 
 ---
 
-## Critical: Real Statmon CLI vs Design Doc
+## Key Note: Statmon CLI Interface
 
-The design doc (`docs/design.md`) used **hypothetical** Statmon commands (`querylog.*`, `traffic.*`, `client.*`, `security.*`). The real Statmon CLI reference (`docs/statmon-prompt.txt`) reveals a significantly different interface:
+The design doc and this plan both use the real Statmon `querystore.*` CLI interface documented in `docs/statmon-prompt.txt`. Key characteristics to keep in mind during implementation:
 
-| Design Doc (hypothetical) | Real CLI (`statmon-prompt.txt`) |
-|---|---|
-| `querylog.search domain=X last=1h` | `querystore.top-domains duration 3600 filter "(domain (true (X)))"` |
-| `traffic.topn clients last=1h limit=20` | `querystore.top-clients duration 3600 max-results 20` |
-| `traffic.summary last=1h` | `querystore.count duration 3600` + `querystore.qps duration 3600` |
-| `client.stats <ip>` | `querystore.top-domains duration 3600 filter "(client-address (true (<ip>)))"` |
-| `security.threats` | No equivalent — must be composed from filters (e.g., NXDOMAIN floods via `querystore.group-count`) |
-| Simple `key=value` filters | S-expression filter syntax: `"(and ( (result-code (true (nxdomain))) (client-network (true ((netblock 10.0.0.0/24)))) ))"` |
-| `last=1h` time windows | `duration 3600` (seconds) or `interval ("YYYY-MM-DD:HH:MM:SS", "...")` |
-| `limit=N` | `max-results N` (default 20) |
-
-### Impact on Implementation
-
-1. **Allow/deny rules** — The statmon config must filter `querystore.*` commands, not `querylog.*`/`traffic.*`/etc. The deny list must include `querystore.reset` (destructive). The allow list covers `querystore.*` minus the denied commands.
-
-2. **Mock CLI** — Must implement `querystore.*` commands with S-expression filter parsing (at least basic recognition), not the hypothetical `querylog.search domain=X` style.
-
-3. **System prompt** — Must use the real CLI reference from `docs/statmon-prompt.txt` instead of the hypothetical one in the design doc. The investigation patterns section needs rewriting to use real commands. The S-expression filter syntax is complex enough that the system prompt must include clear examples (the ones in `statmon-prompt.txt` are good).
-
-4. **MCP tool description** — The `statmon` tool description should reference `querystore.*` commands and the S-expression filter syntax.
-
-5. **CLI executor argument handling** — The S-expression filters contain spaces, quotes, and parentheses. The command string **cannot** be naively split on whitespace. We need to pass the full command string as a single argument or use proper shell-like parsing. Recommended approach: pass the entire command string to the CLI binary, letting it handle its own argument parsing (i.e., `binary <full_command_string>` as a single arg, or `binary` with the command string split via `shlex.split()` to handle quoted substrings).
+- **Commands** use `querystore.*` namespace (e.g., `querystore.top-clients`, `querystore.count`, `querystore.replay`)
+- **Filters** use S-expression syntax: `"(and ( (result-code (true (nxdomain))) (client-network (true ((netblock 10.0.0.0/24)))) ))"`
+- **Time windows** use `duration <seconds>` or `interval ("YYYY-MM-DD:HH:MM:SS", "...")`
+- **Result limits** use `max-results <n>` (default 20)
+- **CLI executor** must use `shlex.split()` to preserve quoted S-expression filter strings when splitting arguments
+- **No built-in security/threat commands** — threat detection (DDoS, DGA, tunneling) must be composed from filters on `querystore.group-count`, `querystore.top-clients`, `querystore.replay`, etc.
 
 ---
 
@@ -167,7 +151,7 @@ Both scripts should produce output with slightly randomized values (seeded by `N
 
 ### 1.4 Write dev config files
 
-Create `dev/config-node-a.yaml`, `dev/config-node-b.yaml`, and `dev/config-chat.yaml`. These follow the design doc section 7 structure but with corrected statmon rules:
+Create `dev/config-node-a.yaml`, `dev/config-node-b.yaml`, and `dev/config-chat.yaml`. These follow the design doc section 7 structure:
 
 ```yaml
 statmon:
@@ -280,10 +264,7 @@ As specified in the design doc. Python 3.12-slim base, install from pyproject.to
   - **CacheServe CLI reference** — Needs to be written (the design doc has a sketch; we need a concise man-page-style reference for the allowed CacheServe commands).
   - **Statmon Querystore CLI reference** — Use `docs/statmon-prompt.txt` as the basis. This is the real CLI documentation and should be included nearly verbatim in the system prompt.
 - The dynamic part (available nodes list) is injected based on the currently connected nodes from the MCP pool.
-- **Investigation patterns** must be rewritten to use real `querystore.*` commands. For example:
-  - DDoS detection: `querystore.qps` for rate spikes → `querystore.top-clients` for sources → `querystore.group-count group-by 'result-code'` for NXDOMAIN floods
-  - Performance: `querystore.top-domains-by-response-size` for bandwidth hogs → `querystore.group-count group-by 'result-code'` for SERVFAIL rates
-  - Malware/C2: `querystore.top-domains` with NXDOMAIN filter for DGA → `querystore.replay` for forensic detail
+- **Investigation patterns** — The design doc already has these written with real `querystore.*` commands. Use them as the basis for the system prompt's investigation guidance.
 - Keep the prompt in a separate file (`statmon_chat/prompt.txt` or similar) for easy iteration without code changes.
 
 ### 3.4 `statmon_chat/app.py` — FastAPI web app
@@ -408,8 +389,8 @@ Steps 1-6 can be built and verified without an Anthropic API key. Steps 7-14 req
 
 6. **Concurrent tool calls:** The Anthropic API can return multiple `tool_use` blocks in a single response (e.g., querying both nodes simultaneously). The chat app should execute these in parallel (`asyncio.gather`) rather than sequentially for better latency.
 
-7. **S-expression filter complexity:** The real Statmon filter syntax (`"(and ( (result-code (true (nxdomain))) ... ))"`) is significantly more complex than the `key=value` filters assumed in the design doc. This has two implications:
+7. **S-expression filter complexity:** The Statmon filter syntax (`"(and ( (result-code (true (nxdomain))) ... ))"`) is non-trivial. Two implications:
    - The LLM must learn to construct these filters correctly. The system prompt must include enough examples (the 5 examples in `statmon-prompt.txt` are a good start). We may need to iterate on the prompt to get reliable filter generation.
    - The CLI executor must preserve quoted filter strings intact when splitting arguments. `shlex.split()` handles this, but we need tests confirming it works with the real S-expression examples.
 
-8. **Missing CacheServe CLI reference:** We have the real Statmon reference (`docs/statmon-prompt.txt`) but the CacheServe CLI reference is still hypothetical. We should either obtain the real CacheServe CLI docs or clearly mark the CacheServe portion of the system prompt as placeholder. The mock CLI and system prompt should be consistent with each other regardless.
+8. **Missing CacheServe CLI reference:** We have the real Statmon reference (`docs/statmon-prompt.txt`) but the CacheServe CLI reference in the design doc is a sketch based on expected commands. We should either obtain the real CacheServe CLI docs or clearly mark the CacheServe portion of the system prompt as placeholder. The mock CLI and system prompt should be consistent with each other regardless.
