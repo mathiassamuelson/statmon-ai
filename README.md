@@ -41,6 +41,65 @@ docker compose up
   - [`statmon-prompt.txt`](docs/statmon-prompt.txt) — Statmon Querystore CLI reference (real command syntax)
 - **`configs/`** — Configuration file templates
 
+## Running the MCP Server (without Docker)
+
+You can run the MCP server directly for development or on a host where Docker isn't available.
+
+### 1. Install dependencies
+
+```bash
+./setup.sh
+source ~/statmon-ai/bin/activate
+```
+
+Or manually:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ./statmon-mcp
+```
+
+### 2. Configure
+
+Point the server at a config file via the `STATMON_MCP_CONFIG` environment variable:
+
+```bash
+export STATMON_MCP_CONFIG=./dev/config-node-a.yaml
+```
+
+The config specifies the node name, statmon binary path, and allow/deny rules. See `dev/config-node-a.yaml` for an example. For production, copy `configs/mcp-server.example.yaml` to `/etc/statmon-mcp/config.yaml` and update the binary path and node name.
+
+### 3. Start the server
+
+```bash
+uvicorn statmon_mcp.server:app --host 0.0.0.0 --port 8100
+```
+
+The server exposes:
+- `GET /mcp` — SSE endpoint for MCP client connections
+- `POST /messages/` — MCP message handling
+- `GET /health` — Health check
+
+### 4. Verify
+
+```bash
+curl http://localhost:8100/health
+```
+
+Expected: `{"status":"ok","node":"dns-node-a","tools":["statmon"]}`
+
+### Using with mock CLI
+
+To use the mock CLI instead of a real Statmon binary, make it executable and set `NODE_NAME`:
+
+```bash
+chmod +x mock-cli/statmon
+export NODE_NAME=dns-node-a
+```
+
+Then ensure the config points `binary` at `./mock-cli/statmon` (or the absolute path).
+
 ## Development
 
 ```bash
