@@ -44,7 +44,14 @@ def seeded_random(extra_seed=""):
 
 
 def parse_args(args):
-    """Parse common querystore arguments from the command line."""
+    """Parse common querystore arguments from the command line.
+
+    Supports both key=value syntax (production nom-tell style) and
+    key value syntax (legacy/convenience).
+    Examples:
+        duration=3600 max-results=10 filter="((query-type (true (A AAAA))))"
+        duration 3600 max-results 10 filter "(query-type (true (A AAAA)))"
+    """
     parsed = {
         "duration": 3600,
         "max_results": 20,
@@ -56,34 +63,65 @@ def parse_args(args):
         "order": "descending",
     }
 
+    KEY_MAP = {
+        "duration": "duration",
+        "max-results": "max_results",
+        "filter": "filter",
+        "interval": "interval",
+        "source": "source",
+        "anonymize": "anonymize",
+        "group-by": "group_by",
+        "order": "order",
+        "end": None,  # accepted but ignored
+    }
+
     i = 0
     while i < len(args):
         arg = args[i]
-        if arg == "duration" and i + 1 < len(args):
-            parsed["duration"] = int(args[i + 1])
-            i += 2
-        elif arg == "max-results" and i + 1 < len(args):
-            parsed["max_results"] = int(args[i + 1])
-            i += 2
-        elif arg == "filter" and i + 1 < len(args):
-            parsed["filter"] = args[i + 1]
-            i += 2
-        elif arg == "interval" and i + 1 < len(args):
-            parsed["interval"] = args[i + 1]
-            i += 2
-        elif arg == "source" and i + 1 < len(args):
-            parsed["source"] = args[i + 1]
-            i += 2
-        elif arg == "anonymize" and i + 1 < len(args):
-            parsed["anonymize"] = args[i + 1].lower() == "true"
-            i += 2
-        elif arg == "group-by" and i + 1 < len(args):
-            parsed["group_by"] = args[i + 1].strip("'\"")
-            i += 2
-        elif arg == "order" and i + 1 < len(args):
-            parsed["order"] = args[i + 1].strip("'\"")
-            i += 2
-        elif arg == "end" and i + 1 < len(args):
+
+        # Handle key=value syntax
+        if "=" in arg:
+            key, value = arg.split("=", 1)
+            mapped = KEY_MAP.get(key)
+            if mapped == "duration":
+                parsed["duration"] = int(value)
+            elif mapped == "max_results":
+                parsed["max_results"] = int(value)
+            elif mapped == "filter":
+                parsed["filter"] = value.strip("'\"")
+            elif mapped == "interval":
+                parsed["interval"] = value.strip("'\"")
+            elif mapped == "source":
+                parsed["source"] = value.strip("'\"")
+            elif mapped == "anonymize":
+                parsed["anonymize"] = value.lower() == "true"
+            elif mapped == "group_by":
+                parsed["group_by"] = value.strip("'\"")
+            elif mapped == "order":
+                parsed["order"] = value.strip("'\"")
+            i += 1
+            continue
+
+        # Handle key value syntax (space-separated)
+        if arg in KEY_MAP and i + 1 < len(args):
+            mapped = KEY_MAP[arg]
+            value = args[i + 1]
+            if mapped == "duration":
+                parsed["duration"] = int(value)
+            elif mapped == "max_results":
+                parsed["max_results"] = int(value)
+            elif mapped == "filter":
+                parsed["filter"] = value
+            elif mapped == "interval":
+                parsed["interval"] = value
+            elif mapped == "source":
+                parsed["source"] = value
+            elif mapped == "anonymize":
+                parsed["anonymize"] = value.lower() == "true"
+            elif mapped == "group_by":
+                parsed["group_by"] = value.strip("'\"")
+            elif mapped == "order":
+                parsed["order"] = value.strip("'\"")
             i += 2
         else:
             i += 1

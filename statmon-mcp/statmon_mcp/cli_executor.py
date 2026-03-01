@@ -2,6 +2,10 @@
 
 Uses shlex.split() to correctly handle S-expression filter strings
 with spaces and parentheses in quoted arguments.
+
+The executor builds the full command as: binary [subsystem] command [args...].
+In production: /usr/local/nom/sbin/nom-tell statmon querystore.top-clients duration=3600
+In dev (mock): ./mock-cli/statmon querystore.top-clients duration=3600
 """
 
 import asyncio
@@ -10,24 +14,31 @@ import shlex
 import time
 
 
-async def run_cli(binary: str, command: str, timeout: int) -> dict:
+async def run_cli(
+    binary: str, subsystem: str, command: str, timeout: int
+) -> dict:
     """Execute a CLI command as a subprocess and return a structured result.
 
     Args:
-        binary: Path to the CLI binary.
-        command: The command string (e.g., 'querystore.top-clients duration 3600').
+        binary: Path to the CLI binary (e.g., /usr/local/nom/sbin/nom-tell).
+        subsystem: Subsystem name to pass as first arg (e.g., 'statmon').
+                   If empty, omitted from the command line.
+        command: The command string (e.g., 'querystore.top-clients duration=3600').
         timeout: Maximum execution time in seconds.
 
     Returns:
         Dict with status, exit_code, execution_time_ms, and result or error.
     """
-    args = shlex.split(command)
+    cmd_parts = shlex.split(command)
+    if subsystem:
+        cmd_parts = [subsystem] + cmd_parts
+
     start = time.monotonic()
 
     try:
         proc = await asyncio.create_subprocess_exec(
             binary,
-            *args,
+            *cmd_parts,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

@@ -60,9 +60,9 @@ async def list_tools():
                         "type": "string",
                         "description": (
                             "The Statmon querystore command to execute "
-                            "(e.g., 'querystore.top-clients duration 3600 max-results 10', "
-                            "'querystore.count duration 300 "
-                            'filter "(result-code (true (nxdomain)))"\')'
+                            "(e.g., 'querystore.top-clients duration=3600 max-results=10', "
+                            "'querystore.count duration=300 "
+                            'filter="((result-code (true (nxdomain))))"\')'
                         ),
                     }
                 },
@@ -112,7 +112,9 @@ async def call_tool(name: str, arguments: dict):
             }
         ]
 
-    result = await run_cli(cfg["binary"], command, cfg["timeout_seconds"])
+    result = await run_cli(
+        cfg["binary"], cfg.get("subsystem", ""), command, cfg["timeout_seconds"]
+    )
     result["node"] = node_name
     result["tool"] = "statmon"
     result["command"] = command

@@ -5,6 +5,7 @@ server:
 
 statmon:
   binary: "/opt/mock-cli/statmon"
+  subsystem: ""
   timeout_seconds: 60
   rules:
     deny:

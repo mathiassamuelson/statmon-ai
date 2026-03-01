@@ -8,11 +8,12 @@ This plan translates `docs/design.md` into concrete implementation steps. It fol
 
 The design doc and this plan both use the real Statmon `querystore.*` CLI interface documented in `docs/statmon-prompt.txt`. Key characteristics to keep in mind during implementation:
 
+- **Invocation** is via `nom-tell`: `/usr/local/nom/sbin/nom-tell statmon querystore.<command> [args...]`
 - **Commands** use `querystore.*` namespace (e.g., `querystore.top-clients`, `querystore.count`, `querystore.replay`)
-- **Filters** use S-expression syntax: `"(and ( (result-code (true (nxdomain))) (client-network (true ((netblock 10.0.0.0/24)))) ))"`
+- **Filters** use S-expression syntax: `"((and ((result-code (true (nxdomain))) (client-network (true ((netblock 10.0.0.0/24)))) )))"`
 - **Time windows** use `duration <seconds>` or `interval ("YYYY-MM-DD:HH:MM:SS", "...")`
 - **Result limits** use `max-results <n>` (default 20)
-- **CLI executor** must use `shlex.split()` to preserve quoted S-expression filter strings when splitting arguments
+- **CLI executor** must use `shlex.split()` to preserve quoted S-expression filter strings when splitting arguments. The executor receives a command string like `querystore.top-clients duration 3600` and prepends the configured binary and subsystem, executing: `nom-tell statmon querystore.top-clients duration=3600`
 - **No built-in security/threat commands** — threat detection (DDoS, DGA, tunneling) must be composed from filters on `querystore.group-count`, `querystore.top-clients`, `querystore.replay`, etc.
 
 ---
@@ -148,7 +149,8 @@ Create `dev/config-node-a.yaml`, `dev/config-node-b.yaml`, and `dev/config-chat.
 
 ```yaml
 statmon:
-  binary: "/opt/mock-cli/statmon"
+  binary: "/usr/local/nom/sbin/nom-tell"
+  subsystem: "statmon"
   timeout_seconds: 60
   rules:
     deny:
@@ -156,6 +158,8 @@ statmon:
     allow:
       - "querystore.*"           # All other querystore commands are read-only
 ```
+
+The `binary` points to `nom-tell` and `subsystem` specifies the target (`statmon`). The CLI executor builds the full command as: `<binary> <subsystem> <command> [args...]`. For local dev with the mock CLI, set `binary` to the mock script path and `subsystem` to empty string (the mock accepts commands directly).
 
 CacheServe is deferred — omit from dev configs for now, or include as a no-op stub.
 
@@ -185,12 +189,13 @@ Remove PyTorch/CUDA steps. New flow:
 
 ### 2.2 `statmon_mcp/cli_executor.py` — Subprocess execution
 
-- `async def run_cli(binary: str, command: str, timeout: int) -> dict` — Runs the CLI binary as a subprocess, captures stdout/stderr, measures execution time, handles timeouts.
+- `async def run_cli(binary: str, subsystem: str, command: str, timeout: int) -> dict` — Runs the CLI as a subprocess, captures stdout/stderr, measures execution time, handles timeouts.
+- The executor builds the full command line as: `binary [subsystem] <command_args>`. In production this becomes `/usr/local/nom/sbin/nom-tell statmon querystore.top-clients duration=3600`. If `subsystem` is empty (e.g., mock CLI), it is omitted.
 - Parse stdout as JSON if possible, fall back to raw string.
 - Return the structured envelope from the design doc (status, exit_code, execution_time_ms, result/error).
 - **Important: Argument handling with S-expression filters.** The real Statmon CLI uses commands like:
   ```
-  querystore.top-clients duration 3600 filter "(query-type (true (A AAAA)))"
+  nom-tell statmon querystore.top-clients duration=3600 filter="((query-type (true (A AAAA))))"
   ```
   The quoted S-expression filter contains spaces and parentheses. Naive `command.split()` would break this. Use `shlex.split()` which handles quoted substrings correctly. Verify this works with the S-expression examples from `docs/statmon-prompt.txt`.
 

@@ -7,7 +7,8 @@ server:
   node_name: "dns-node-a"    # Change per node
 
 statmon:
-  binary: "/opt/statmon/bin/statmon"
+  binary: "/usr/local/nom/sbin/nom-tell"
+  subsystem: "statmon"
   timeout_seconds: 60
   rules:
     deny:
