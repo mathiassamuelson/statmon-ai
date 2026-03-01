@@ -12,11 +12,14 @@ VENV_PATH="$HOME/statmon-ai"
 echo ""
 echo "[1/3] Setting up Python environment..."
 
+apt install -y python3.12-venv
+
 python_version=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
 echo "  Python version: $python_version"
 
-if [ ! -d "$VENV_PATH" ]; then
+if [ ! -f "$VENV_PATH/bin/activate" ]; then
     echo "  Creating virtual environment at $VENV_PATH..."
+    rm -rf "$VENV_PATH"
     python3 -m venv "$VENV_PATH"
 else
     echo "  Virtual environment already exists at $VENV_PATH"
