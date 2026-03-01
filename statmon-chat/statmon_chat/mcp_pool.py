@@ -4,6 +4,7 @@ Handles tool discovery, node-prefixed naming, and tool call routing.
 Uses AsyncExitStack to manage persistent SSE connections.
 """
 
+import asyncio
 import logging
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
@@ -12,6 +13,8 @@ from mcp import ClientSession
 from mcp.client.sse import sse_client
 
 logger = logging.getLogger(__name__)
+
+CONNECT_TIMEOUT_SECONDS = 15
 
 
 @dataclass
@@ -42,8 +45,16 @@ class MCPPool:
             name = node_cfg["name"]
             url = node_cfg["mcp_url"]
             try:
-                await self._connect_node(name, url)
+                await asyncio.wait_for(
+                    self._connect_node(name, url),
+                    timeout=CONNECT_TIMEOUT_SECONDS,
+                )
                 logger.info(f"Connected to {name} at {url}")
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Timed out connecting to {name} at {url} "
+                    f"(>{CONNECT_TIMEOUT_SECONDS}s) — skipping"
+                )
             except Exception:
                 logger.exception(f"Failed to connect to {name} at {url}")
 

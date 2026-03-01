@@ -8,6 +8,6 @@ anthropic:
 
 nodes:
   - name: "dns-node-a"
-    mcp_url: "http://mcp-node-a:8100/mcp"
+    mcp_url: "http://172.236.238.174:8100/mcp"
   - name: "dns-node-b"
-    mcp_url: "http://mcp-node-b:8100/mcp"
+    mcp_url: "http://172.233.141.120:8100/mcp"

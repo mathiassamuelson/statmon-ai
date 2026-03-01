@@ -10,6 +10,7 @@ import os
 import yaml
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
+from mcp.types import Tool
 from starlette.applications import Starlette
 from starlette.routing import Mount, Route
 from starlette.responses import JSONResponse
@@ -43,16 +44,16 @@ async def list_tools():
     config = get_config()
     node_name = config["server"]["node_name"]
     return [
-        {
-            "name": "statmon",
-            "description": (
+        Tool(
+            name="statmon",
+            description=(
                 f"Execute a read-only Statmon querystore command on node {node_name}. "
                 "Returns JSON output from the Statmon log collector. "
                 "Use for query activity analysis, traffic metrics, bandwidth statistics, "
                 "and forensic replay of DNS queries. "
                 "Commands use S-expression filter syntax for targeted searches."
             ),
-            "inputSchema": {
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "command": {
@@ -67,7 +68,7 @@ async def list_tools():
                 },
                 "required": ["command"],
             },
-        }
+        )
     ]
 
 
@@ -119,19 +120,15 @@ async def call_tool(name: str, arguments: dict):
     return [{"type": "text", "text": json.dumps(result)}]
 
 
-async def handle_sse(request):
-    async with sse_transport.connect_sse(
-        request.scope, request.receive, request._send
-    ) as streams:
+async def handle_sse(scope, receive, send):
+    async with sse_transport.connect_sse(scope, receive, send) as streams:
         await mcp_server.run(
             streams[0], streams[1], mcp_server.create_initialization_options()
         )
 
 
-async def handle_messages(request):
-    await sse_transport.handle_post_message(
-        request.scope, request.receive, request._send
-    )
+async def handle_messages(scope, receive, send):
+    await sse_transport.handle_post_message(scope, receive, send)
 
 
 async def health(request):
@@ -148,7 +145,7 @@ async def health(request):
 app = Starlette(
     routes=[
         Route("/health", health),
-        Route("/mcp", endpoint=handle_sse),
-        Mount("/messages", routes=[Route("/", endpoint=handle_messages, methods=["POST"])]),
+        Mount("/mcp/messages", app=handle_messages),
+        Mount("/mcp", app=handle_sse),
     ],
 )
