@@ -68,7 +68,7 @@ export STATMON_MCP_CONFIG=/etc/statmon-mcp/config.yaml
 uvicorn statmon_mcp.server:app --host 0.0.0.0 --port 8100
 ```
 
-The config specifies the node name, binary path, and allow/deny rules. See `configs/mcp-server.example.yaml` for a template. In production, place the config at `/etc/statmon-mcp/config.yaml`.
+The config specifies the node name, binary path, and allow/deny rules. See `configs/mcp-server.example.yaml` for a template. Config is loaded from (in order): `STATMON_MCP_CONFIG` env var, `~/.config/statmon-mcp/config.yaml`, `/etc/statmon-mcp/config.yaml`.
 
 Endpoints:
 - `GET /mcp` — SSE endpoint for MCP client connections
@@ -92,7 +92,7 @@ export STATMON_CHAT_CONFIG=/etc/statmon-chat/config.yaml
 uvicorn statmon_chat.app:app --host 0.0.0.0 --port 8443
 ```
 
-The chat config specifies the Anthropic model and the list of MCP node URLs to connect to. See `configs/chat-app.example.yaml` for a template. In production, place the config at `/etc/statmon-chat/config.yaml`.
+The chat config specifies the Anthropic model and the list of MCP node URLs to connect to. See `configs/chat-app.example.yaml` for a template. Config is loaded from (in order): `STATMON_CHAT_CONFIG` env var, `~/.config/statmon-chat/config.yaml`, `/etc/statmon-chat/config.yaml`.
 
 Endpoints:
 - `GET /` — Chat web UI

@@ -25,10 +25,12 @@ SESSION_TTL_SECONDS = 3600  # 1 hour
 
 def load_config() -> dict:
     import os
+    from pathlib import Path
 
-    config_path = os.environ.get(
-        "STATMON_CHAT_CONFIG", "/etc/statmon-chat/config.yaml"
-    )
+    config_path = os.environ.get("STATMON_CHAT_CONFIG")
+    if not config_path:
+        user_path = Path.home() / ".config" / "statmon-chat" / "config.yaml"
+        config_path = str(user_path) if user_path.exists() else "/etc/statmon-chat/config.yaml"
     with open(config_path) as f:
         return yaml.safe_load(f)
 

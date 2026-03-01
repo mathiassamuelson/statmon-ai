@@ -1,6 +1,6 @@
 """MCP server exposing Statmon CLI tools via SSE transport.
 
-Loads config from STATMON_MCP_CONFIG env var or /etc/statmon-mcp/config.yaml.
+Loads config from STATMON_MCP_CONFIG env var, ~/.config/statmon-mcp/config.yaml, or /etc/statmon-mcp/config.yaml.
 Exposes a single 'statmon' tool (CacheServe deferred).
 """
 
@@ -20,9 +20,12 @@ from .cli_executor import run_cli
 
 
 def load_config() -> dict:
-    config_path = os.environ.get(
-        "STATMON_MCP_CONFIG", "/etc/statmon-mcp/config.yaml"
-    )
+    from pathlib import Path
+
+    config_path = os.environ.get("STATMON_MCP_CONFIG")
+    if not config_path:
+        user_path = Path.home() / ".config" / "statmon-mcp" / "config.yaml"
+        config_path = str(user_path) if user_path.exists() else "/etc/statmon-mcp/config.yaml"
     with open(config_path) as f:
         return yaml.safe_load(f)
 
