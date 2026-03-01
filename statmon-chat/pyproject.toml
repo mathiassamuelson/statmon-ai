@@ -1,0 +1,19 @@
+[project]
+name = "statmon-chat"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic",
+    "mcp[client]",
+    "fastapi",
+    "uvicorn",
+    "pyyaml",
+    "jinja2",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["statmon_chat*"]

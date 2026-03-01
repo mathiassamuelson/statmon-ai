@@ -1,0 +1,17 @@
+[project]
+name = "statmon-mcp"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp[server]",
+    "pyyaml",
+    "starlette",
+    "uvicorn",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["statmon_mcp*"]

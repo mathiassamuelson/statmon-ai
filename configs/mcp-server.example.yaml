@@ -1,0 +1,16 @@
+# Production MCP server configuration
+# Copy to /etc/statmon-mcp/config.yaml on each DNS node
+
+server:
+  host: "0.0.0.0"
+  port: 8100
+  node_name: "dns-node-a"    # Change per node
+
+statmon:
+  binary: "/opt/statmon/bin/statmon"
+  timeout_seconds: 60
+  rules:
+    deny:
+      - "querystore.reset"
+    allow:
+      - "querystore.*"

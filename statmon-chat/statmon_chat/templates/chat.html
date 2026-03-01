@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Statmon AI Aggregator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Statmon AI Aggregator</h1>
+        <span id="node-status" class="node-badge">{{ node_count }} node(s) connected</span>
+    </header>
+
+    <main id="chat-area">
+        <div id="messages"></div>
+    </main>
+
+    <footer>
+        <form id="chat-form" autocomplete="off">
+            <input type="text" id="message-input" placeholder="Ask about DNS traffic, security, performance..." autofocus>
+            <button type="submit" id="send-btn">Send</button>
+        </form>
+    </footer>
+
+    <script>
+        let sessionId = null;
+        const messagesEl = document.getElementById('messages');
+        const form = document.getElementById('chat-form');
+        const input = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        function appendMessage(role, text) {
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.textContent = text;
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function setLoading(loading) {
+            sendBtn.disabled = loading;
+            input.disabled = loading;
+            if (loading) {
+                const indicator = document.createElement('div');
+                indicator.className = 'message assistant loading';
+                indicator.id = 'loading-indicator';
+                indicator.textContent = 'Thinking...';
+                messagesEl.appendChild(indicator);
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+            } else {
+                const indicator = document.getElementById('loading-indicator');
+                if (indicator) indicator.remove();
+            }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = input.value.trim();
+            if (!message) return;
+
+            appendMessage('user', message);
+            input.value = '';
+            setLoading(true);
+
+            try {
+                const body = { message };
+                if (sessionId) body.session_id = sessionId;
+
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    sessionId = data.session_id;
+                    appendMessage('assistant', data.response);
+                } else {
+                    appendMessage('assistant', `Error: ${data.error || 'Unknown error'}`);
+                }
+            } catch (err) {
+                appendMessage('assistant', `Connection error: ${err.message}`);
+            } finally {
+                setLoading(false);
+                input.focus();
+            }
+        });
+
+        // Fetch node status on load
+        fetch('/api/nodes')
+            .then(r => r.json())
+            .then(data => {
+                const badge = document.getElementById('node-status');
+                badge.textContent = `${data.nodes.length} node(s) connected`;
+            })
+            .catch(() => {});
+    </script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+"""Subprocess execution for CLI tools.
+
+Uses shlex.split() to correctly handle S-expression filter strings
+with spaces and parentheses in quoted arguments.
+"""
+
+import asyncio
+import json
+import shlex
+import time
+
+
+async def run_cli(binary: str, command: str, timeout: int) -> dict:
+    """Execute a CLI command as a subprocess and return a structured result.
+
+    Args:
+        binary: Path to the CLI binary.
+        command: The command string (e.g., 'querystore.top-clients duration 3600').
+        timeout: Maximum execution time in seconds.
+
+    Returns:
+        Dict with status, exit_code, execution_time_ms, and result or error.
+    """
+    args = shlex.split(command)
+    start = time.monotonic()
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            binary,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
+        )
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+
+        result = {
+            "exit_code": proc.returncode,
+            "execution_time_ms": elapsed_ms,
+        }
+
+        if proc.returncode == 0:
+            result["status"] = "success"
+            try:
+                result["result"] = json.loads(stdout.decode())
+            except json.JSONDecodeError:
+                result["result"] = stdout.decode().strip()
+        else:
+            result["status"] = "error"
+            result["error"] = stderr.decode().strip() or stdout.decode().strip()
+
+        return result
+
+    except asyncio.TimeoutError:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        return {
+            "status": "error",
+            "error": f"Command timed out after {timeout}s",
+            "execution_time_ms": elapsed_ms,
+        }
+    except FileNotFoundError:
+        return {
+            "status": "error",
+            "error": f"Binary not found: {binary}",
+        }
