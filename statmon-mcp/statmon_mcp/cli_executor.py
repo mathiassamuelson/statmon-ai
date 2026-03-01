@@ -4,8 +4,7 @@ Uses shlex.split() to correctly handle S-expression filter strings
 with spaces and parentheses in quoted arguments.
 
 The executor builds the full command as: binary [subsystem] command [args...].
-In production: /usr/local/nom/sbin/nom-tell statmon querystore.top-clients duration=3600
-In dev (mock): ./mock-cli/statmon querystore.top-clients duration=3600
+Example: /usr/local/nom/sbin/nom-tell statmon querystore.top-clients duration=3600
 """
 
 import asyncio

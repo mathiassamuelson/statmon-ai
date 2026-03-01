@@ -16,7 +16,7 @@ source ~/statmon-ai/bin/activate        # Activate the virtual environment
 
 ### Docker Development
 ```bash
-docker compose up                       # Full stack with mock CLIs
+docker compose up                       # Full stack (configs from host /etc paths)
 docker compose up --build               # Rebuild and run
 ```
 
@@ -32,7 +32,6 @@ flake8                        # Lint code
 ### Components
 - `statmon-mcp/` — MCP server running on each DNS node; exposes `cacheserve` and `statmon` CLI tools with allow/deny command filtering
 - `statmon-chat/` — FastAPI web app; connects to all MCP nodes, routes tool calls, mediates with Anthropic API
-- `mock-cli/` — Mock CacheServe/Statmon CLIs returning realistic JSON (for local dev)
 - `docs/` — Design specification and command references
 - `configs/` — Configuration file templates
 

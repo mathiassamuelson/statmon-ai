@@ -26,7 +26,7 @@ cd statmon-ai-aggregator
 ./setup.sh
 source ~/statmon-ai/bin/activate
 
-# Run with Docker Compose (full stack with mock CLIs)
+# Run with Docker Compose
 docker compose up
 ```
 
@@ -34,7 +34,6 @@ docker compose up
 
 - **`statmon-mcp/`** — MCP server (runs on each DNS node)
 - **`statmon-chat/`** — Chat application (FastAPI + Anthropic API + MCP clients)
-- **`mock-cli/`** — Mock CacheServe/Statmon CLIs for local development
 - **`docs/`** — Project documentation:
   - [`design.md`](docs/design.md) — Full design specification and architecture
   - [`plan.md`](docs/plan.md) — Implementation plan with phased milestones
@@ -60,27 +59,16 @@ source .venv/bin/activate
 pip install -e ./statmon-mcp -e ./statmon-chat
 ```
 
-### Using the mock CLI
-
-To use the mock CLI instead of real Statmon binaries, make it executable and set `NODE_NAME`:
-
-```bash
-chmod +x mock-cli/statmon
-export NODE_NAME=dns-node-a
-```
-
-Then ensure the MCP config points `binary` at `./mock-cli/statmon` (or the absolute path).
-
 ### MCP Server (`statmon-mcp`)
 
 Point the server at a config file via `STATMON_MCP_CONFIG`:
 
 ```bash
-export STATMON_MCP_CONFIG=./dev/config-node-a.yaml
+export STATMON_MCP_CONFIG=/etc/statmon-mcp/config.yaml
 uvicorn statmon_mcp.server:app --host 0.0.0.0 --port 8100
 ```
 
-The config specifies the node name, statmon binary path, and allow/deny rules. See `dev/config-node-a.yaml` for an example. For production, copy `configs/mcp-server.example.yaml` to `/etc/statmon-mcp/config.yaml`.
+The config specifies the node name, binary path, and allow/deny rules. See `configs/mcp-server.example.yaml` for a template. In production, place the config at `/etc/statmon-mcp/config.yaml`.
 
 Endpoints:
 - `GET /mcp` — SSE endpoint for MCP client connections
@@ -100,11 +88,11 @@ The chat app requires an Anthropic API key and at least one running MCP server t
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-export STATMON_CHAT_CONFIG=./dev/config-chat.yaml
+export STATMON_CHAT_CONFIG=/etc/statmon-chat/config.yaml
 uvicorn statmon_chat.app:app --host 0.0.0.0 --port 8443
 ```
 
-The chat config specifies the Anthropic model, and the list of MCP node URLs to connect to. See `dev/config-chat.yaml` for an example. For production, copy `configs/chat-app.example.yaml` to `/etc/statmon-chat/config.yaml`.
+The chat config specifies the Anthropic model and the list of MCP node URLs to connect to. See `configs/chat-app.example.yaml` for a template. In production, place the config at `/etc/statmon-chat/config.yaml`.
 
 Endpoints:
 - `GET /` — Chat web UI
@@ -119,29 +107,6 @@ curl http://localhost:8443/api/health
 # {"status":"ok","nodes_connected":2,"tools_available":2}
 ```
 
-### Running the full stack locally
-
-Start two MCP servers (as separate terminals or background processes), then the chat app:
-
-```bash
-# Terminal 1: MCP node A
-export STATMON_MCP_CONFIG=./dev/config-node-a.yaml
-export NODE_NAME=dns-node-a
-uvicorn statmon_mcp.server:app --host 0.0.0.0 --port 8101
-
-# Terminal 2: MCP node B
-export STATMON_MCP_CONFIG=./dev/config-node-b.yaml
-export NODE_NAME=dns-node-b
-uvicorn statmon_mcp.server:app --host 0.0.0.0 --port 8102
-
-# Terminal 3: Chat app (update dev/config-chat.yaml node URLs to localhost:8101/8102 first)
-export ANTHROPIC_API_KEY=sk-ant-...
-export STATMON_CHAT_CONFIG=./dev/config-chat.yaml
-uvicorn statmon_chat.app:app --host 0.0.0.0 --port 8443
-```
-
-Then open http://localhost:8443 in your browser.
-
 ## Development
 
 ```bash
@@ -152,4 +117,4 @@ flake8                        # Lint code
 
 ---
 
-**Last Updated:** February 2026
+**Last Updated:** March 2026

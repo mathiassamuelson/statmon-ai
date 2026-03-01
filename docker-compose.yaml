@@ -5,8 +5,7 @@ services:
     environment:
       - NODE_NAME=dns-node-a
     volumes:
-      - ./mock-cli:/opt/mock-cli:ro
-      - ./dev/config-node-a.yaml:/etc/statmon-mcp/config.yaml:ro
+      - /etc/statmon-mcp/config.yaml:/etc/statmon-mcp/config.yaml:ro
     ports:
       - "8101:8100"
     networks:
@@ -18,8 +17,7 @@ services:
     environment:
       - NODE_NAME=dns-node-b
     volumes:
-      - ./mock-cli:/opt/mock-cli:ro
-      - ./dev/config-node-b.yaml:/etc/statmon-mcp/config.yaml:ro
+      - /etc/statmon-mcp/config.yaml:/etc/statmon-mcp/config.yaml:ro
     ports:
       - "8102:8100"
     networks:
@@ -31,7 +29,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./dev/config-chat.yaml:/etc/statmon-chat/config.yaml:ro
+      - /etc/statmon-chat/config.yaml:/etc/statmon-chat/config.yaml:ro
     ports:
       - "8443:8443"
     depends_on:

@@ -44,8 +44,6 @@ pip install -r requirements.txt
 echo ""
 echo "[3/3] Verifying setup..."
 
-chmod +x mock-cli/statmon
-
 python3 -c "import statmon_mcp; print('  statmon-mcp: OK')"
 python3 -c "import statmon_chat; print('  statmon-chat: OK')"
 

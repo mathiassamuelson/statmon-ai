@@ -1,10 +1,44 @@
 """Tests for statmon_mcp.cli_executor — subprocess execution."""
 
 import os
+import stat
+import tempfile
+import textwrap
 import pytest
 from statmon_mcp.cli_executor import run_cli
 
-MOCK_CLI = os.path.join(os.path.dirname(__file__), "..", "mock-cli", "statmon")
+
+@pytest.fixture
+def cli_helper(tmp_path):
+    """Create a small test helper script that echoes JSON based on args."""
+    script = tmp_path / "test-cli"
+    script.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env python3
+            import json, sys
+            args = sys.argv[1:]
+            if not args:
+                print("missing command", file=sys.stderr)
+                sys.exit(1)
+            cmd = args[0]
+            kv = {}
+            for a in args[1:]:
+                if "=" in a:
+                    k, v = a.split("=", 1)
+                    kv[k] = v
+            if cmd == "echo-json":
+                print(json.dumps({"command": cmd, "args": kv}))
+            elif cmd == "echo-text":
+                print("hello world")
+            else:
+                print(f"unknown command: {cmd}", file=sys.stderr)
+                sys.exit(1)
+            """
+        )
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return str(script)
 
 
 @pytest.fixture(autouse=True)
@@ -13,82 +47,46 @@ def set_node_name(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_basic_command():
-    result = await run_cli(MOCK_CLI, "", "querystore.top-clients max-results=3", timeout=10)
+async def test_basic_json_command(cli_helper):
+    result = await run_cli(cli_helper, "", "echo-json foo=bar", timeout=10)
     assert result["status"] == "success"
     assert result["exit_code"] == 0
-    assert "result" in result
-    assert len(result["result"]["results"]) == 3
+    assert result["result"] == {"command": "echo-json", "args": {"foo": "bar"}}
     assert result["execution_time_ms"] >= 0
 
 
 @pytest.mark.asyncio
-async def test_count_command():
-    result = await run_cli(MOCK_CLI, "", "querystore.count duration=300", timeout=10)
+async def test_plain_text_output(cli_helper):
+    result = await run_cli(cli_helper, "", "echo-text", timeout=10)
     assert result["status"] == "success"
-    assert "count" in result["result"]
+    assert result["result"] == "hello world"
 
 
 @pytest.mark.asyncio
-async def test_group_count_command():
-    result = await run_cli(
-        MOCK_CLI,
-        "",
-        "querystore.group-count duration=300 group-by='result-code' order='descending'",
-        timeout=10,
-    )
-    assert result["status"] == "success"
-    assert "groups" in result["result"]
-
-
-@pytest.mark.asyncio
-async def test_filter_with_s_expression():
-    result = await run_cli(
-        MOCK_CLI,
-        "",
-        'querystore.top-clients duration=3600 filter="((query-type (true (A AAAA))))"',
-        timeout=10,
-    )
-    assert result["status"] == "success"
-    assert result["exit_code"] == 0
-
-
-@pytest.mark.asyncio
-async def test_complex_s_expression_filter():
-    result = await run_cli(
-        MOCK_CLI,
-        "",
-        'querystore.count duration=3600 filter="((and ((result-code (true (nxdomain))) (client-network (true ((netblock 10.0.0.0/24)))) )))"',
-        timeout=10,
-    )
-    assert result["status"] == "success"
-
-
-@pytest.mark.asyncio
-async def test_subsystem_prepended():
+async def test_subsystem_prepended(cli_helper):
     """When subsystem is set, it's prepended as the first argument."""
-    # The mock CLI doesn't understand 'statmon' as a first arg, so it will
-    # treat 'statmon' as the command and fail — that's expected behavior.
-    result = await run_cli(MOCK_CLI, "statmon", "querystore.count", timeout=10)
-    assert result["status"] == "error"  # mock doesn't know 'statmon' command
+    result = await run_cli(cli_helper, "mysub", "echo-json", timeout=10)
+    # The helper sees 'mysub' as the command, not 'echo-json', so it fails.
+    assert result["status"] == "error"
 
 
 @pytest.mark.asyncio
-async def test_empty_subsystem_not_prepended():
-    result = await run_cli(MOCK_CLI, "", "querystore.count", timeout=10)
+async def test_empty_subsystem_not_prepended(cli_helper):
+    result = await run_cli(cli_helper, "", "echo-json key=val", timeout=10)
     assert result["status"] == "success"
+    assert result["result"]["args"] == {"key": "val"}
 
 
 @pytest.mark.asyncio
-async def test_unknown_command():
-    result = await run_cli(MOCK_CLI, "", "querystore.nonexistent", timeout=10)
+async def test_unknown_command(cli_helper):
+    result = await run_cli(cli_helper, "", "nonexistent", timeout=10)
     assert result["status"] == "error"
     assert result["exit_code"] != 0
 
 
 @pytest.mark.asyncio
 async def test_binary_not_found():
-    result = await run_cli("/nonexistent/binary", "", "querystore.count", timeout=10)
+    result = await run_cli("/nonexistent/binary", "", "echo-json", timeout=10)
     assert result["status"] == "error"
     assert "not found" in result["error"].lower()
 
@@ -101,8 +99,19 @@ async def test_timeout():
 
 
 @pytest.mark.asyncio
-async def test_space_separated_args_still_work():
-    """Legacy space-separated args should still work with the mock CLI."""
-    result = await run_cli(MOCK_CLI, "", "querystore.top-clients max-results 3", timeout=10)
+async def test_multiple_key_value_args(cli_helper):
+    result = await run_cli(
+        cli_helper, "", "echo-json duration=3600 max-results=5", timeout=10
+    )
     assert result["status"] == "success"
-    assert len(result["result"]["results"]) == 3
+    assert result["result"]["args"] == {"duration": "3600", "max-results": "5"}
+
+
+@pytest.mark.asyncio
+async def test_quoted_args_with_spaces(cli_helper):
+    """Quoted arguments with spaces are handled correctly by shlex."""
+    result = await run_cli(
+        cli_helper, "", 'echo-json filter="((query-type (true (A AAAA))))"', timeout=10
+    )
+    assert result["status"] == "success"
+    assert "filter" in result["result"]["args"]
