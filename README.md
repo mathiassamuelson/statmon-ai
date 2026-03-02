@@ -38,6 +38,7 @@ docker compose up
   - [`design.md`](docs/design.md) — Full design specification and architecture
   - [`plan.md`](docs/plan.md) — Implementation plan with phased milestones
   - [`statmon-prompt.txt`](docs/statmon-prompt.txt) — Statmon Querystore CLI reference (real command syntax)
+  - [`StatmonExplainer.md`](docs/StatmonExplainer.md) — Practical troubleshooting examples and patterns
 - **`configs/`** — Configuration file templates
 
 ## Running without Docker
