@@ -5,11 +5,13 @@ blocks -> call API again -> loop until no more tool calls.
 """
 
 import asyncio
+import json
 import logging
 
 import anthropic
 
 from .mcp_pool import MCPPool
+from .trace import TraceCollector
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ class AnthropicChat:
         tools: list[dict],
         mcp_pool: MCPPool,
         system_prompt: str,
+        trace: TraceCollector | None = None,
     ) -> str:
         """Run one turn of conversation, handling tool calls in a loop.
 
@@ -45,18 +48,38 @@ class AnthropicChat:
             tools: Anthropic-format tool definitions.
             mcp_pool: The MCP pool for routing tool calls.
             system_prompt: The system prompt string.
+            trace: Optional TraceCollector for timing instrumentation.
 
         Returns:
             The final assistant text response.
         """
         for round_num in range(MAX_TOOL_ROUNDS):
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=system_prompt,
-                tools=tools,
-                messages=conversation,
-            )
+            if trace:
+                trace.start_round(round_num)
+
+            if trace:
+                with trace.span("anthropic_api", model=self.model) as api_span:
+                    response = await self.client.messages.create(
+                        model=self.model,
+                        max_tokens=self.max_tokens,
+                        system=system_prompt,
+                        tools=tools,
+                        messages=conversation,
+                    )
+                    api_span.metadata.update({
+                        "input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                        "stop_reason": response.stop_reason,
+                    })
+                trace.record_api_call(api_span)
+            else:
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=self.max_tokens,
+                    system=system_prompt,
+                    tools=tools,
+                    messages=conversation,
+                )
 
             if response.stop_reason != "tool_use":
                 text_parts = [
@@ -76,23 +99,40 @@ class AnthropicChat:
             )
 
             tool_results = await self._execute_tool_calls(
-                response.content, mcp_pool
+                response.content, mcp_pool, trace
             )
             conversation.append({"role": "user", "content": tool_results})
 
         return "I've reached the maximum number of tool call rounds. Please try a more specific question."
 
     async def _execute_tool_calls(
-        self, content_blocks, mcp_pool: MCPPool
+        self, content_blocks, mcp_pool: MCPPool, trace: TraceCollector | None = None
     ) -> list[dict]:
         """Execute all tool calls in a response, in parallel."""
         tool_use_blocks = [b for b in content_blocks if b.type == "tool_use"]
 
         async def _call_one(block):
+            command = block.input.get("command", "") if isinstance(block.input, dict) else ""
             try:
-                result_text = await mcp_pool.call_tool(
-                    block.name, block.input
-                )
+                if trace:
+                    with trace.span("tool_call", tool_name=block.name, command=command) as tc_span:
+                        result_text = await mcp_pool.call_tool(
+                            block.name, block.input
+                        )
+                        tc_span.metadata["response_bytes"] = len(result_text)
+                        try:
+                            parsed = json.loads(result_text)
+                            if "execution_time_ms" in parsed:
+                                tc_span.metadata["cli_execution_ms"] = parsed["execution_time_ms"]
+                            if "node" in parsed:
+                                tc_span.metadata["node"] = parsed["node"]
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    trace.record_tool_call(tc_span)
+                else:
+                    result_text = await mcp_pool.call_tool(
+                        block.name, block.input
+                    )
                 return {
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -107,5 +147,10 @@ class AnthropicChat:
                     "is_error": True,
                 }
 
-        results = await asyncio.gather(*[_call_one(b) for b in tool_use_blocks])
+        if trace:
+            with trace.span("tool_batch", tool_count=len(tool_use_blocks), parallel=True) as batch_span:
+                results = await asyncio.gather(*[_call_one(b) for b in tool_use_blocks])
+            trace.record_tool_batch(batch_span)
+        else:
+            results = await asyncio.gather(*[_call_one(b) for b in tool_use_blocks])
         return list(results)

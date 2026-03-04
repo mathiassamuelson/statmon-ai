@@ -31,11 +31,66 @@
         const input = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
 
-        function appendMessage(role, text) {
+        function fmtMs(ms) {
+            if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
+            return Math.round(ms) + 'ms';
+        }
+
+        function fmtBytes(bytes) {
+            if (bytes >= 1024) return (bytes / 1024).toFixed(1) + 'KB';
+            return bytes + 'B';
+        }
+
+        function buildTraceHtml(trace) {
+            if (!trace || !trace.rounds || trace.rounds.length === 0) return '';
+
+            const summary = `${fmtMs(trace.total_ms)} | ${trace.round_count} round(s) | ${trace.tool_call_count} tool call(s)`;
+            let lines = [];
+
+            trace.rounds.forEach((round, ri) => {
+                const isLast = ri === trace.rounds.length - 1;
+                const prefix = isLast ? '\u2514\u2500' : '\u251c\u2500';
+                const childPrefix = isLast ? '   ' : '\u2502  ';
+
+                let roundLine = `${prefix} Round ${round.round_num + 1}: `;
+                if (round.api_call) {
+                    const m = round.api_call.metadata || {};
+                    roundLine += `API ${fmtMs(round.api_call.duration_ms)}`;
+                    if (m.input_tokens || m.output_tokens) {
+                        roundLine += ` (in:${(m.input_tokens || 0).toLocaleString()} out:${(m.output_tokens || 0).toLocaleString()} tokens)`;
+                    }
+                }
+                if (round.tool_batch) {
+                    const tc = (round.tool_calls || []).length;
+                    roundLine += ` \u2192 ${tc} tool(s) (parallel, ${fmtMs(round.tool_batch.duration_ms)})`;
+                }
+                lines.push(roundLine);
+
+                if (round.tool_calls) {
+                    round.tool_calls.forEach((tc, ti) => {
+                        const tcLast = ti === round.tool_calls.length - 1;
+                        const tcPrefix = tcLast ? '\u2514\u2500' : '\u251c\u2500';
+                        const m = tc.metadata || {};
+                        let tcLine = `${childPrefix}${tcPrefix} ${m.tool_name || tc.name}`;
+                        if (m.command) tcLine += `: ${m.command}`;
+                        tcLine += ` \u2014 ${fmtMs(tc.duration_ms)}`;
+                        const details = [];
+                        if (m.cli_execution_ms !== undefined) details.push(`CLI: ${fmtMs(m.cli_execution_ms)}`);
+                        if (m.response_bytes !== undefined) details.push(fmtBytes(m.response_bytes));
+                        if (details.length) tcLine += ` (${details.join(', ')})`;
+                        lines.push(tcLine);
+                    });
+                }
+            });
+
+            return `<details class="trace"><summary>${summary}</summary><pre>${lines.join('\n')}</pre></details>`;
+        }
+
+        function appendMessage(role, text, trace) {
             const div = document.createElement('div');
             div.className = `message ${role}`;
             if (role === 'assistant') {
-                div.innerHTML = marked.parse(text);
+                div.innerHTML = marked.parse(text) + buildTraceHtml(trace);
             } else {
                 div.textContent = text;
             }
@@ -82,7 +137,7 @@
 
                 if (res.ok) {
                     sessionId = data.session_id;
-                    appendMessage('assistant', data.response);
+                    appendMessage('assistant', data.response, data.trace);
                 } else {
                     appendMessage('assistant', `Error: ${data.error || 'Unknown error'}`);
                 }

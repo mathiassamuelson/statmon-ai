@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 from .anthropic_client import AnthropicChat
 from .mcp_pool import MCPPool
 from .system_prompt import build_system_prompt
+from .trace import TraceCollector
 
 logger = logging.getLogger(__name__)
 
@@ -124,9 +125,10 @@ async def chat(request: Request):
 
     conversation.append({"role": "user", "content": message})
 
+    trace = TraceCollector()
     try:
         response_text = await _anthropic_chat.run_turn(
-            conversation, _tools, _mcp_pool, _system_prompt
+            conversation, _tools, _mcp_pool, _system_prompt, trace=trace
         )
     except Exception:
         logger.exception("Error in conversation turn")
@@ -137,7 +139,7 @@ async def chat(request: Request):
         )
 
     return JSONResponse(
-        {"response": response_text, "session_id": session_id}
+        {"response": response_text, "session_id": session_id, "trace": trace.to_dict()}
     )
 
 
