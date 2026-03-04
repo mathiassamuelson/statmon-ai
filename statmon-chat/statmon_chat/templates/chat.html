@@ -13,16 +13,16 @@
         <span id="node-status" class="node-badge">{{ node_count }} node(s) connected</span>
     </header>
 
-    <main id="chat-area">
-        <div id="messages"></div>
-    </main>
-
-    <footer>
+    <div id="input-bar">
         <form id="chat-form" autocomplete="off">
             <input type="text" id="message-input" placeholder="Ask about DNS traffic, security, performance..." autofocus>
             <button type="submit" id="send-btn">Send</button>
         </form>
-    </footer>
+    </div>
+
+    <main id="chat-area">
+        <div id="messages"></div>
+    </main>
 
     <script>
         let sessionId = null;
@@ -94,8 +94,7 @@
             } else {
                 div.textContent = text;
             }
-            messagesEl.appendChild(div);
-            messagesEl.scrollTop = messagesEl.scrollHeight;
+            messagesEl.prepend(div);
         }
 
         function setLoading(loading) {
@@ -106,8 +105,7 @@
                 indicator.className = 'message assistant loading';
                 indicator.id = 'loading-indicator';
                 indicator.textContent = 'Thinking...';
-                messagesEl.appendChild(indicator);
-                messagesEl.scrollTop = messagesEl.scrollHeight;
+                messagesEl.prepend(indicator);
             } else {
                 const indicator = document.getElementById('loading-indicator');
                 if (indicator) indicator.remove();

@@ -1,5 +1,5 @@
-Add an MCP for searching the web for info about domains, including e.g. WHOIS, but also security related.
-Add orchestration that shows exactly what calls are made, what tools are called, how long they take, how much data is transferred.
-Add a debug mode that shows what calls will be made before they are made.
-Add two more DNS servers in a “separate site” and explore what use cases come out of multi-level aggregation.
-Change the default model to Haiku.
+1. Add support for searching the web for info about domains, including e.g. WHOIS, but also security related.
+2. Add observability that shows exactly what calls are made, what tools are called, how long they take, how much data is transferred. **_Complete_**
+3. Add a debug mode that shows what calls will be made before they are made. **_Complete_**
+4. Add two more DNS servers in a “separate site” and explore what use cases come out of multi-level aggregation.
+5. Change the default model to Haiku.
