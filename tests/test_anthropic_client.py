@@ -242,3 +242,56 @@ class TestAnthropicChat:
             )
 
             assert "maximum number of tool call rounds" in result
+
+    @pytest.mark.asyncio
+    async def test_mixed_mcp_and_security_tools(self):
+        """MCP and security tool calls in the same batch route correctly."""
+        chat = AnthropicChat()
+
+        mcp_block = SimpleNamespace(
+            type="tool_use",
+            id="tool_1",
+            name="dns_node_a__statmon",
+            input={"command": "querystore.count"},
+        )
+        security_block = SimpleNamespace(
+            type="tool_use",
+            id="tool_2",
+            name="whois_lookup",
+            input={"domain": "suspicious.xyz"},
+        )
+        tool_response = SimpleNamespace(
+            stop_reason="tool_use",
+            content=[mcp_block, security_block],
+            usage=_mock_usage(),
+        )
+        final_response = SimpleNamespace(
+            stop_reason="end_turn",
+            content=[SimpleNamespace(type="text", text="Report complete.")],
+            usage=_mock_usage(),
+        )
+
+        mock_pool = MagicMock()
+        mock_pool.call_tool = AsyncMock(return_value='{"count": 42}')
+
+        with patch.object(
+            chat.client.messages, "create", new_callable=AsyncMock
+        ) as mock_create:
+            mock_create.side_effect = [tool_response, final_response]
+            with patch(
+                "statmon_chat.anthropic_client.security_dispatch",
+                new_callable=AsyncMock,
+                return_value='{"tool": "whois_lookup", "status": "success", "result": {}}',
+            ) as mock_sec:
+                conversation = [{"role": "user", "content": "investigate"}]
+                result = await chat.run_turn(
+                    conversation, [], mock_pool, "system prompt"
+                )
+
+                assert result == "Report complete."
+                mock_pool.call_tool.assert_called_once_with(
+                    "dns_node_a__statmon", {"command": "querystore.count"}
+                )
+                mock_sec.assert_called_once_with(
+                    "whois_lookup", {"domain": "suspicious.xyz"}, None
+                )

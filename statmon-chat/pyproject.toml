@@ -9,6 +9,9 @@ dependencies = [
     "uvicorn",
     "pyyaml",
     "jinja2",
+    "python-whois",
+    "dnspython",
+    "httpx",
 ]
 
 [build-system]

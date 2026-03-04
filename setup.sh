@@ -4,7 +4,7 @@ echo "================================================"
 echo "StatMon AI Aggregator - Environment Setup"
 echo "================================================"
 
-VENV_PATH="$HOME/statmon-ai"
+VENV_PATH=".venv"
 
 #######################################################################
 # SECTION 1: Python Environment
@@ -53,4 +53,4 @@ echo "Setup complete!"
 echo "================================================"
 echo ""
 echo "To activate the environment:"
-echo "  source ~/statmon-ai/bin/activate"
+echo "  source .venv/bin/activate"

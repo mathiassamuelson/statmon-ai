@@ -11,6 +11,7 @@ import logging
 import anthropic
 
 from .mcp_pool import MCPPool
+from .security_tools import SECURITY_TOOL_NAMES, dispatch as security_dispatch
 from .trace import TraceCollector
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class AnthropicChat:
         mcp_pool: MCPPool,
         system_prompt: str,
         trace: TraceCollector | None = None,
+        security_tools_config: dict | None = None,
     ) -> str:
         """Run one turn of conversation, handling tool calls in a loop.
 
@@ -49,6 +51,7 @@ class AnthropicChat:
             mcp_pool: The MCP pool for routing tool calls.
             system_prompt: The system prompt string.
             trace: Optional TraceCollector for timing instrumentation.
+            security_tools_config: Optional config dict for security tools.
 
         Returns:
             The final assistant text response.
@@ -99,39 +102,36 @@ class AnthropicChat:
             )
 
             tool_results = await self._execute_tool_calls(
-                response.content, mcp_pool, trace
+                response.content, mcp_pool, trace, security_tools_config
             )
             conversation.append({"role": "user", "content": tool_results})
 
         return "I've reached the maximum number of tool call rounds. Please try a more specific question."
 
     async def _execute_tool_calls(
-        self, content_blocks, mcp_pool: MCPPool, trace: TraceCollector | None = None
+        self,
+        content_blocks,
+        mcp_pool: MCPPool,
+        trace: TraceCollector | None = None,
+        security_tools_config: dict | None = None,
     ) -> list[dict]:
         """Execute all tool calls in a response, in parallel."""
         tool_use_blocks = [b for b in content_blocks if b.type == "tool_use"]
 
         async def _call_one(block):
-            command = block.input.get("command", "") if isinstance(block.input, dict) else ""
+            is_security = block.name in SECURITY_TOOL_NAMES
+            inp = block.input if isinstance(block.input, dict) else {}
+            # For trace: show command (MCP) or query (security tool)
+            trace_query = inp.get("command", "") or inp.get("domain", "") or inp.get("name", "") or inp.get("ip", "")
+
             try:
-                if trace:
-                    with trace.span("tool_call", tool_name=block.name, command=command) as tc_span:
-                        result_text = await mcp_pool.call_tool(
-                            block.name, block.input
-                        )
-                        tc_span.metadata["response_bytes"] = len(result_text)
-                        try:
-                            parsed = json.loads(result_text)
-                            if "execution_time_ms" in parsed:
-                                tc_span.metadata["cli_execution_ms"] = parsed["execution_time_ms"]
-                            if "node" in parsed:
-                                tc_span.metadata["node"] = parsed["node"]
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-                    trace.record_tool_call(tc_span)
+                if is_security:
+                    result_text = await self._call_security_tool(
+                        block.name, inp, security_tools_config, trace, trace_query
+                    )
                 else:
-                    result_text = await mcp_pool.call_tool(
-                        block.name, block.input
+                    result_text = await self._call_mcp_tool(
+                        block.name, inp, mcp_pool, trace, trace_query
                     )
                 return {
                     "type": "tool_result",
@@ -154,3 +154,39 @@ class AnthropicChat:
         else:
             results = await asyncio.gather(*[_call_one(b) for b in tool_use_blocks])
         return list(results)
+
+    async def _call_mcp_tool(
+        self, name: str, arguments: dict, mcp_pool: MCPPool,
+        trace: TraceCollector | None, trace_query: str,
+    ) -> str:
+        """Execute an MCP tool call with optional tracing."""
+        if trace:
+            with trace.span("tool_call", tool_name=name, command=trace_query) as tc_span:
+                result_text = await mcp_pool.call_tool(name, arguments)
+                tc_span.metadata["response_bytes"] = len(result_text)
+                try:
+                    parsed = json.loads(result_text)
+                    if "execution_time_ms" in parsed:
+                        tc_span.metadata["cli_execution_ms"] = parsed["execution_time_ms"]
+                    if "node" in parsed:
+                        tc_span.metadata["node"] = parsed["node"]
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            trace.record_tool_call(tc_span)
+        else:
+            result_text = await mcp_pool.call_tool(name, arguments)
+        return result_text
+
+    async def _call_security_tool(
+        self, name: str, arguments: dict, config: dict | None,
+        trace: TraceCollector | None, trace_query: str,
+    ) -> str:
+        """Execute a local security tool call with optional tracing."""
+        if trace:
+            with trace.span("tool_call", tool_name=name, query=trace_query) as tc_span:
+                result_text = await security_dispatch(name, arguments, config)
+                tc_span.metadata["response_bytes"] = len(result_text)
+            trace.record_tool_call(tc_span)
+        else:
+            result_text = await security_dispatch(name, arguments, config)
+        return result_text

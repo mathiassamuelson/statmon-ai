@@ -14,3 +14,13 @@ nodes:
     mcp_url: "http://10.0.1.10:8100/mcp"
   - name: "dns-node-b"
     mcp_url: "http://10.0.1.11:8100/mcp"
+
+# Optional: security investigation tools configuration
+# All settings have sensible defaults — this section can be omitted entirely.
+# security_tools:
+#   dns_resolver: "system"          # "system", "8.8.8.8", "1.1.1.1"
+#   whois_timeout_seconds: 10
+#   geolocation_provider: "ip-api"  # "ip-api" (free, no key needed)
+#   # Future: API keys for threat intel services
+#   # virustotal_api_key: ""
+#   # abuseipdb_api_key: ""

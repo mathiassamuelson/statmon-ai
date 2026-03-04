@@ -24,7 +24,7 @@ cd statmon-ai-aggregator
 
 # Setup environment
 ./setup.sh
-source ~/statmon-ai/bin/activate
+source .venv/bin/activate
 
 # Run with Docker Compose
 docker compose up
@@ -48,7 +48,7 @@ Both components can be run directly for development or on hosts where Docker isn
 
 ```bash
 ./setup.sh
-source ~/statmon-ai/bin/activate
+source .venv/bin/activate
 ```
 
 Or manually:

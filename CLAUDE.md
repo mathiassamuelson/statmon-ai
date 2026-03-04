@@ -10,8 +10,8 @@ StatMon AI Aggregator — a natural-language chatbot that enables carrier engine
 
 ### Environment Setup
 ```bash
-./setup.sh                              # Full environment setup (creates ~/statmon-ai venv)
-source ~/statmon-ai/bin/activate        # Activate the virtual environment
+./setup.sh                              # Full environment setup (creates .venv)
+source .venv/bin/activate               # Activate the virtual environment
 ```
 
 ### Docker Development

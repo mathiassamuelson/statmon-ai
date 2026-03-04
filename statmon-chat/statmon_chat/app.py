@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 
 from .anthropic_client import AnthropicChat
 from .mcp_pool import MCPPool
+from .security_tools import get_tool_definitions as get_security_tools
 from .system_prompt import build_system_prompt
 from .trace import TraceCollector
 
@@ -41,6 +42,7 @@ _mcp_pool: MCPPool | None = None
 _anthropic_chat: AnthropicChat | None = None
 _system_prompt: str = ""
 _tools: list[dict] = []
+_security_tools_config: dict = {}
 _sessions: dict[str, dict] = {}  # session_id -> {"messages": [...], "last_access": float}
 
 
@@ -57,15 +59,20 @@ def _evict_stale_sessions():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _mcp_pool, _anthropic_chat, _system_prompt, _tools
+    global _mcp_pool, _anthropic_chat, _system_prompt, _tools, _security_tools_config
 
     config = load_config()
 
     _mcp_pool = MCPPool()
     await _mcp_pool.connect_all(config.get("nodes", []))
 
-    _tools = _mcp_pool.build_anthropic_tools()
+    _tools = (
+        _mcp_pool.build_anthropic_tools()
+        + get_security_tools()
+        + [{"type": "web_search_20250305", "name": "web_search"}]
+    )
     _system_prompt = build_system_prompt(_mcp_pool.get_node_list())
+    _security_tools_config = config.get("security_tools", {})
 
     anthropic_cfg = config.get("anthropic", {})
     _anthropic_chat = AnthropicChat(
@@ -128,7 +135,8 @@ async def chat(request: Request):
     trace = TraceCollector()
     try:
         response_text = await _anthropic_chat.run_turn(
-            conversation, _tools, _mcp_pool, _system_prompt, trace=trace
+            conversation, _tools, _mcp_pool, _system_prompt,
+            trace=trace, security_tools_config=_security_tools_config,
         )
     except Exception:
         logger.exception("Error in conversation turn")
