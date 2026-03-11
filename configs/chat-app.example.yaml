@@ -9,6 +9,10 @@ anthropic:
   model: "claude-sonnet-4-20250514"
   max_tokens: 4096
 
+# Optional: path to a custom prompt template file (system prompt).
+# Defaults to the bundled statmon_chat/prompt.txt.
+# prompt_path: "/path/to/statmon-ai-proprietary/statmon-chat/statmon_chat/prompt.txt"
+
 nodes:
   - name: "dns-node-a"
     mcp_url: "http://10.0.1.10:8100/mcp"

@@ -25,6 +25,51 @@ logger = logging.getLogger(__name__)
 SESSION_TTL_SECONDS = 3600  # 1 hour
 
 
+class _SSEDisconnectFilter(logging.Filter):
+    """Downgrade the noisy MCP SSE traceback to a short warning.
+
+    When an MCP server shuts down, the SSE reader in the mcp library logs a
+    full exception traceback at ERROR level ("Error in sse_reader").  This
+    filter intercepts that record and replaces it with a one-line WARNING so
+    the log stays readable.  The reconnect logic in MCPPool handles recovery.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.funcName == "sse_reader" and record.exc_info:
+            exc = record.exc_info[1]
+            msg = str(exc) if exc else record.getMessage()
+            logger.warning(
+                "MCP node SSE connection lost (%s) — "
+                "will reconnect on next health check or tool call",
+                msg,
+            )
+            return False  # suppress the original noisy record
+        return True
+
+
+logging.getLogger("mcp.client.sse").addFilter(_SSEDisconnectFilter())
+
+
+class _CancelledErrorFilter(logging.Filter):
+    """Suppress CancelledError tracebacks from starlette/uvicorn during reconnect.
+
+    When an MCP SSE connection is torn down for reconnection, the anyio task
+    group cancellation propagates as a CancelledError through starlette's
+    lifespan handler.  Starlette formats the traceback as a plain string and
+    sends it to uvicorn which logs it at ERROR level (no exc_info — just the
+    traceback text in the message body).  This is expected and harmless.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "CancelledError" in msg:
+            return False
+        return True
+
+
+logging.getLogger("uvicorn.error").addFilter(_CancelledErrorFilter())
+
+
 def load_config() -> dict:
     import os
     from pathlib import Path
@@ -40,8 +85,7 @@ def load_config() -> dict:
 # Global state set during lifespan
 _mcp_pool: MCPPool | None = None
 _anthropic_chat: AnthropicChat | None = None
-_system_prompt: str = ""
-_tools: list[dict] = []
+_prompt_path: str | None = None
 _security_tools_config: dict = {}
 _sessions: dict[str, dict] = {}  # session_id -> {"messages": [...], "last_access": float}
 
@@ -57,22 +101,33 @@ def _evict_stale_sessions():
         del _sessions[sid]
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _mcp_pool, _anthropic_chat, _system_prompt, _tools, _security_tools_config
-
-    config = load_config()
-
-    _mcp_pool = MCPPool()
-    await _mcp_pool.connect_all(config.get("nodes", []))
-
-    _tools = (
-        _mcp_pool.build_anthropic_tools()
+def _build_tools() -> list[dict]:
+    """Build the combined tool list from the current MCP pool state."""
+    mcp_tools = _mcp_pool.build_anthropic_tools() if _mcp_pool else []
+    return (
+        mcp_tools
         + get_security_tools()
         + [{"type": "web_search_20250305", "name": "web_search"}]
     )
-    _system_prompt = build_system_prompt(_mcp_pool.get_node_list())
+
+
+def _build_system_prompt() -> str:
+    """Build the system prompt from the current MCP pool state."""
+    node_list = _mcp_pool.get_node_list() if _mcp_pool else []
+    return build_system_prompt(node_list, prompt_path=_prompt_path)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _mcp_pool, _anthropic_chat, _prompt_path, _security_tools_config
+
+    config = load_config()
+
+    _prompt_path = config.get("prompt_path")
     _security_tools_config = config.get("security_tools", {})
+
+    _mcp_pool = MCPPool()
+    await _mcp_pool.connect_all(config.get("nodes", []))
 
     anthropic_cfg = config.get("anthropic", {})
     _anthropic_chat = AnthropicChat(
@@ -81,7 +136,8 @@ async def lifespan(app: FastAPI):
     )
 
     logger.info(
-        f"Started with {len(_mcp_pool.nodes)} nodes, {len(_tools)} tools"
+        f"Started with {len(_mcp_pool.nodes)} nodes, "
+        f"{len(_build_tools())} tools"
     )
     yield
 
@@ -103,9 +159,15 @@ templates = Jinja2Templates(directory=_template_dir)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    node_count = len(_mcp_pool.nodes) if _mcp_pool else 0
+    configured = len(_mcp_pool.node_configs) if _mcp_pool else 0
+    connected = len(_mcp_pool.nodes) if _mcp_pool else 0
     return templates.TemplateResponse(
-        "chat.html", {"request": request, "node_count": node_count}
+        "chat.html",
+        {
+            "request": request,
+            "configured": configured,
+            "connected": connected,
+        },
     )
 
 
@@ -132,10 +194,13 @@ async def chat(request: Request):
 
     conversation.append({"role": "user", "content": message})
 
+    tools = _build_tools()
+    system_prompt = _build_system_prompt()
+
     trace = TraceCollector()
     try:
         response_text = await _anthropic_chat.run_turn(
-            conversation, _tools, _mcp_pool, _system_prompt,
+            conversation, tools, _mcp_pool, system_prompt,
             trace=trace, security_tools_config=_security_tools_config,
         )
     except Exception:
@@ -154,18 +219,26 @@ async def chat(request: Request):
 @app.get("/api/nodes")
 async def nodes():
     if _mcp_pool:
-        return JSONResponse({"nodes": _mcp_pool.get_node_list()})
-    return JSONResponse({"nodes": []})
+        await _mcp_pool.check_health()
+        node_list = _mcp_pool.get_node_list()
+        configured = len(_mcp_pool.node_configs)
+        connected = sum(1 for n in node_list if n["status"] == "connected")
+        return JSONResponse(
+            {"nodes": node_list, "configured": configured, "connected": connected}
+        )
+    return JSONResponse({"nodes": [], "configured": 0, "connected": 0})
 
 
 @app.get("/api/health")
 async def health():
     node_count = len(_mcp_pool.nodes) if _mcp_pool else 0
-    tool_count = len(_tools)
+    configured = len(_mcp_pool.node_configs) if _mcp_pool else 0
+    tool_count = len(_build_tools())
     return JSONResponse(
         {
             "status": "ok",
             "nodes_connected": node_count,
+            "nodes_configured": configured,
             "tools_available": tool_count,
         }
     )

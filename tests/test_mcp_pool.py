@@ -41,6 +41,10 @@ def pool_with_mock_nodes():
     pool._nodes["dns-node-b"] = node_b
     pool._tool_registry["dns_node_a__statmon"] = (node_a, "statmon")
     pool._tool_registry["dns_node_b__statmon"] = (node_b, "statmon")
+    pool._node_configs = {
+        "dns-node-a": {"name": "dns-node-a", "mcp_url": "http://mcp-node-a:8100/mcp"},
+        "dns-node-b": {"name": "dns-node-b", "mcp_url": "http://mcp-node-b:8100/mcp"},
+    }
 
     return pool
 

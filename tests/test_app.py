@@ -2,7 +2,7 @@
 
 import pytest
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -28,34 +28,45 @@ def client():
     """Create a test client with mocked MCP pool and Anthropic client."""
     orig_pool = app_module._mcp_pool
     orig_chat = app_module._anthropic_chat
-    orig_prompt = app_module._system_prompt
-    orig_tools = app_module._tools
+    orig_prompt_path = app_module._prompt_path
+    orig_security_config = app_module._security_tools_config
     orig_sessions = app_module._sessions
 
     mock_pool = MagicMock()
     mock_pool.nodes = {"dns-node-a": MagicMock()}
+    mock_pool.node_configs = {
+        "dns-node-a": {
+            "name": "dns-node-a",
+            "mcp_url": "http://localhost:8100/mcp",
+        }
+    }
     mock_pool.get_node_list.return_value = [
         {"name": "dns-node-a", "mcp_url": "http://localhost:8100/mcp",
          "tools": ["dns_node_a__statmon"], "status": "connected"}
     ]
+    mock_pool.build_anthropic_tools.return_value = [
+        {"name": "dns_node_a__statmon", "description": "test", "input_schema": {}}
+    ]
+    mock_pool.check_health = AsyncMock(return_value={"dns-node-a": True})
 
     mock_chat = MagicMock()
     mock_chat.run_turn = AsyncMock(return_value="Mock response")
 
     app_module._mcp_pool = mock_pool
     app_module._anthropic_chat = mock_chat
-    app_module._system_prompt = "test prompt"
-    app_module._tools = [{"name": "dns_node_a__statmon"}]
+    app_module._prompt_path = None
+    app_module._security_tools_config = {}
     app_module._sessions = {}
 
     test_app = _build_test_app()
-    with TestClient(test_app) as tc:
-        yield tc, mock_chat
+    with patch("statmon_chat.app.build_system_prompt", return_value="test prompt"):
+        with TestClient(test_app) as tc:
+            yield tc, mock_chat
 
     app_module._mcp_pool = orig_pool
     app_module._anthropic_chat = orig_chat
-    app_module._system_prompt = orig_prompt
-    app_module._tools = orig_tools
+    app_module._prompt_path = orig_prompt_path
+    app_module._security_tools_config = orig_security_config
     app_module._sessions = orig_sessions
 
 
@@ -67,6 +78,7 @@ class TestHealthEndpoint:
         data = response.json()
         assert data["status"] == "ok"
         assert data["nodes_connected"] == 1
+        assert data["nodes_configured"] == 1
 
 
 class TestNodesEndpoint:
@@ -77,6 +89,8 @@ class TestNodesEndpoint:
         data = response.json()
         assert len(data["nodes"]) == 1
         assert data["nodes"][0]["name"] == "dns-node-a"
+        assert data["configured"] == 1
+        assert data["connected"] == 1
 
 
 class TestChatEndpoint:

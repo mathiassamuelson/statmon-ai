@@ -10,7 +10,10 @@
 <body>
     <header>
         <h1>Statmon AI Aggregator</h1>
-        <span id="node-status" class="node-badge">{{ node_count }} node(s) connected</span>
+        <span id="node-status" class="node-badge">
+            <span id="status-dot" class="status-dot"></span>
+            <span id="status-text">{{ connected }}/{{ configured }} node(s)</span>
+        </span>
     </header>
 
     <div id="input-bar">
@@ -147,14 +150,38 @@
             }
         });
 
-        // Fetch node status on load
-        fetch('/api/nodes')
-            .then(r => r.json())
-            .then(data => {
-                const badge = document.getElementById('node-status');
-                badge.textContent = `${data.nodes.length} node(s) connected`;
-            })
-            .catch(() => {});
+        // Node health status polling
+        function updateNodeStatus(data) {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            const { connected, configured } = data;
+
+            text.textContent = `${connected}/${configured} node(s)`;
+
+            if (configured === 0) {
+                dot.className = 'status-dot';
+            } else if (connected === configured) {
+                dot.className = 'status-dot healthy';
+            } else if (connected > 0) {
+                dot.className = 'status-dot degraded';
+            } else {
+                dot.className = 'status-dot down';
+            }
+        }
+
+        function pollNodeStatus() {
+            fetch('/api/nodes')
+                .then(r => r.json())
+                .then(updateNodeStatus)
+                .catch(() => {
+                    const dot = document.getElementById('status-dot');
+                    dot.className = 'status-dot down';
+                });
+        }
+
+        // Initial status check, then poll every 30 seconds
+        pollNodeStatus();
+        setInterval(pollNodeStatus, 30000);
     </script>
 </body>
 </html>

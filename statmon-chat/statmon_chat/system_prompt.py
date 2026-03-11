@@ -1,22 +1,28 @@
 """System prompt builder for the Anthropic API.
 
-Loads the prompt template from prompt.txt and injects dynamic node information.
+Loads the prompt template from prompt.txt (or a custom path) and injects
+dynamic node information.
 """
 
 import os
 
 
-def _load_template() -> str:
-    template_path = os.path.join(os.path.dirname(__file__), "prompt.txt")
-    with open(template_path) as f:
+def _load_template(prompt_path: str | None = None) -> str:
+    path = prompt_path or os.path.join(os.path.dirname(__file__), "prompt.txt")
+    path = os.path.expanduser(path)
+    with open(path) as f:
         return f.read()
 
 
-def build_system_prompt(nodes: list[dict]) -> str:
+def build_system_prompt(
+    nodes: list[dict], prompt_path: str | None = None
+) -> str:
     """Build the full system prompt with dynamic node list.
 
     Args:
         nodes: List of node info dicts with 'name' and 'tools' keys.
+        prompt_path: Optional path to a custom prompt template file.
+            Defaults to the bundled prompt.txt.
 
     Returns:
         The complete system prompt string.
@@ -31,5 +37,5 @@ def build_system_prompt(nodes: list[dict]) -> str:
     else:
         nodes_section = "No nodes are currently connected."
 
-    template = _load_template()
+    template = _load_template(prompt_path)
     return template.replace("{nodes_section}", nodes_section)

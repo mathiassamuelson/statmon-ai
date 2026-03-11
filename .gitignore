@@ -60,6 +60,10 @@ wandb/
 .env
 .env.local
 
+# .claude working directory (except README)
+.claude/*
+!.claude/README.md
+
 # CUDA/GPU specific
 *.cubin
 *.fatbin
