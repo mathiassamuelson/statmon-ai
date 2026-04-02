@@ -61,9 +61,14 @@ class MCPPool:
                     f"Timed out connecting to {name} at {node_cfg['mcp_url']} "
                     f"(>{CONNECT_TIMEOUT_SECONDS}s) — skipping"
                 )
-            except Exception:
-                logger.exception(
+            except Exception as exc:
+                # Extract the root cause from ExceptionGroups
+                cause = exc
+                while cause.__cause__:
+                    cause = cause.__cause__
+                logger.warning(
                     f"Failed to connect to {name} at {node_cfg['mcp_url']}"
+                    f" — {cause}"
                 )
 
     async def _connect_node(self, name: str, url: str) -> None:

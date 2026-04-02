@@ -14,10 +14,39 @@ from .mcp_pool import MCPPool
 from .security_tools import SECURITY_TOOL_NAMES, dispatch as security_dispatch
 from .trace import TraceCollector
 
+from collections.abc import Awaitable, Callable
+
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 10
 TRUNCATE_LIMIT = 15 * 1024  # 15KB
+
+ProgressCallback = Callable[[dict], Awaitable[None]]
+
+
+def _describe_tool_call(block) -> str:
+    """Return a human-readable description of a tool call for progress display."""
+    name = block.name
+    inp = block.input if isinstance(block.input, dict) else {}
+
+    # MCP tools: dns_node_a__statmon
+    if "__" in name:
+        node_part = name.rsplit("__", 1)[0].replace("_", "-")
+        cmd = inp.get("command", "")
+        return f"Querying {node_part}: {cmd}" if cmd else f"Querying {node_part}"
+
+    # Security tools
+    descs = {
+        "whois_lookup": lambda: f"WHOIS lookup: {inp.get('domain', '')}",
+        "dns_resolve": lambda: f"DNS resolve: {inp.get('name', '')}",
+        "ip_geolocation": lambda: f"IP geolocation: {inp.get('ip', '')}",
+        "reverse_dns_lookup": lambda: f"Reverse DNS: {inp.get('ip', '')}",
+        "web_search": lambda: "Searching the web...",
+    }
+    if name in descs:
+        return descs[name]()
+
+    return f"Running {name}"
 
 
 def _truncate(text: str) -> str:
@@ -42,6 +71,7 @@ class AnthropicChat:
         system_prompt: str,
         trace: TraceCollector | None = None,
         security_tools_config: dict | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> str:
         """Run one turn of conversation, handling tool calls in a loop.
 
@@ -52,13 +82,23 @@ class AnthropicChat:
             system_prompt: The system prompt string.
             trace: Optional TraceCollector for timing instrumentation.
             security_tools_config: Optional config dict for security tools.
+            on_progress: Optional async callback for streaming progress updates.
 
         Returns:
             The final assistant text response.
         """
+        async def _progress(message: str):
+            if on_progress:
+                await on_progress({"type": "status", "message": message})
+
         for round_num in range(MAX_TOOL_ROUNDS):
             if trace:
                 trace.start_round(round_num)
+
+            if round_num == 0:
+                await _progress("Thinking...")
+            else:
+                await _progress("Analyzing results...")
 
             if trace:
                 with trace.span("anthropic_api", model=self.model) as api_span:
@@ -96,10 +136,16 @@ class AnthropicChat:
                 )
                 return assistant_text
 
-            # Handle tool calls
+            # Handle tool calls — emit progress for each tool before executing
             conversation.append(
                 {"role": "assistant", "content": response.content}
             )
+
+            tool_use_blocks = [
+                b for b in response.content if b.type == "tool_use"
+            ]
+            for block in tool_use_blocks:
+                await _progress(_describe_tool_call(block))
 
             tool_results = await self._execute_tool_calls(
                 response.content, mcp_pool, trace, security_tools_config

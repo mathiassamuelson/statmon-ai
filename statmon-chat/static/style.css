@@ -195,6 +195,26 @@ main {
 .message.loading {
     color: var(--text-secondary);
     font-style: italic;
+    font-size: 13px;
+}
+
+.loading-step {
+    padding: 2px 0;
+    opacity: 0.5;
+}
+
+.loading-step:last-child {
+    opacity: 1;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.loading-step::before {
+    content: '\203A  ';
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 .trace {

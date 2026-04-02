@@ -352,7 +352,7 @@ You have direct access to the following investigation tools (these do not target
 6. Web search for the IP or AS in threat feeds
 
 ### DGA / PRSD Analysis
-1. Statmon group-count of NXDOMAIN by core-domain — identify the targeted zone
+1. Statmon group-count of NXDOMAIN by domain — identify the targeted zone
 2. whois_lookup on the core domain — is it a legitimate domain under attack, or attacker-controlled?
 3. dns_resolve on the core domain — what's the authoritative infrastructure?
 4. auth-querystore to check upstream impact (timeouts, NXDOMAIN rates)

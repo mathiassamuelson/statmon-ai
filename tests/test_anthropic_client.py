@@ -4,7 +4,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
 
-from statmon_chat.anthropic_client import AnthropicChat, _truncate
+from statmon_chat.anthropic_client import (
+    AnthropicChat,
+    _truncate,
+    _describe_tool_call,
+)
 from statmon_chat.trace import TraceCollector
 
 
@@ -295,3 +299,119 @@ class TestAnthropicChat:
                 mock_sec.assert_called_once_with(
                     "whois_lookup", {"domain": "suspicious.xyz"}, None
                 )
+
+
+class TestDescribeToolCall:
+    """Unit tests for _describe_tool_call."""
+
+    def test_mcp_tool_with_command(self):
+        block = SimpleNamespace(
+            name="dns_node_a__statmon",
+            input={"command": "querystore.top-clients"},
+        )
+        assert _describe_tool_call(block) == (
+            "Querying dns-node-a: querystore.top-clients"
+        )
+
+    def test_mcp_tool_without_command(self):
+        block = SimpleNamespace(
+            name="dns_node_a__statmon",
+            input={},
+        )
+        assert _describe_tool_call(block) == "Querying dns-node-a"
+
+    def test_security_tool(self):
+        block = SimpleNamespace(
+            name="whois_lookup",
+            input={"domain": "example.com"},
+        )
+        assert _describe_tool_call(block) == "WHOIS lookup: example.com"
+
+    def test_unknown_tool(self):
+        block = SimpleNamespace(name="some_tool", input={})
+        assert _describe_tool_call(block) == "Running some_tool"
+
+
+class TestProgressCallback:
+    """Tests for on_progress callback in run_turn."""
+
+    @pytest.mark.asyncio
+    async def test_simple_response_emits_thinking(self):
+        """A single-round response should emit 'Thinking...'."""
+        chat = AnthropicChat()
+        progress_events = []
+
+        async def on_progress(event):
+            progress_events.append(event)
+
+        mock_response = SimpleNamespace(
+            stop_reason="end_turn",
+            content=[SimpleNamespace(type="text", text="Hi!")],
+            usage=_mock_usage(),
+        )
+
+        with patch.object(
+            chat.client.messages, "create", new_callable=AsyncMock
+        ) as mock_create:
+            mock_create.return_value = mock_response
+
+            await chat.run_turn(
+                [{"role": "user", "content": "Hi"}],
+                [], MagicMock(), "system prompt",
+                on_progress=on_progress,
+            )
+
+        assert len(progress_events) == 1
+        assert progress_events[0] == {
+            "type": "status", "message": "Thinking..."
+        }
+
+    @pytest.mark.asyncio
+    async def test_tool_round_emits_progress_sequence(self):
+        """A tool-call round should emit Thinking, tool desc, then Analyzing."""
+        chat = AnthropicChat()
+        progress_events = []
+
+        async def on_progress(event):
+            progress_events.append(event)
+
+        tool_block = SimpleNamespace(
+            type="tool_use",
+            id="tool_1",
+            name="dns_node_a__statmon",
+            input={"command": "querystore.count"},
+        )
+        tool_response = SimpleNamespace(
+            stop_reason="tool_use",
+            content=[tool_block],
+            usage=_mock_usage(),
+        )
+        final_response = SimpleNamespace(
+            stop_reason="end_turn",
+            content=[
+                SimpleNamespace(type="text", text="Done.")
+            ],
+            usage=_mock_usage(),
+        )
+
+        mock_pool = MagicMock()
+        mock_pool.call_tool = AsyncMock(return_value='{"count": 42}')
+
+        with patch.object(
+            chat.client.messages, "create", new_callable=AsyncMock
+        ) as mock_create:
+            mock_create.side_effect = [tool_response, final_response]
+
+            result = await chat.run_turn(
+                [{"role": "user", "content": "count"}],
+                [], mock_pool, "system prompt",
+                on_progress=on_progress,
+            )
+
+        assert result == "Done."
+        messages = [e["message"] for e in progress_events]
+        assert messages == [
+            "Thinking...",
+            "Querying dns-node-a: querystore.count",
+            "Analyzing results...",
+        ]

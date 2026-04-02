@@ -100,19 +100,30 @@
             messagesEl.prepend(div);
         }
 
-        function setLoading(loading) {
-            sendBtn.disabled = loading;
-            input.disabled = loading;
-            if (loading) {
-                const indicator = document.createElement('div');
-                indicator.className = 'message assistant loading';
-                indicator.id = 'loading-indicator';
-                indicator.textContent = 'Thinking...';
-                messagesEl.prepend(indicator);
-            } else {
-                const indicator = document.getElementById('loading-indicator');
-                if (indicator) indicator.remove();
-            }
+        function createLoadingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'message assistant loading';
+            indicator.id = 'loading-indicator';
+            messagesEl.prepend(indicator);
+        }
+
+        function addLoadingStep(message) {
+            const indicator = document.getElementById('loading-indicator');
+            if (!indicator) return;
+            const step = document.createElement('div');
+            step.className = 'loading-step';
+            step.textContent = message;
+            indicator.appendChild(step);
+        }
+
+        function removeLoadingIndicator() {
+            const indicator = document.getElementById('loading-indicator');
+            if (indicator) indicator.remove();
+        }
+
+        function setInputEnabled(enabled) {
+            sendBtn.disabled = !enabled;
+            input.disabled = !enabled;
         }
 
         form.addEventListener('submit', async (e) => {
@@ -122,7 +133,8 @@
 
             appendMessage('user', message);
             input.value = '';
-            setLoading(true);
+            setInputEnabled(false);
+            createLoadingIndicator();
 
             try {
                 const body = { message };
@@ -134,18 +146,52 @@
                     body: JSON.stringify(body),
                 });
 
-                const data = await res.json();
+                if (!res.ok) {
+                    // Non-streaming error (e.g. 400 empty message)
+                    let errMsg = `Error: HTTP ${res.status}`;
+                    try {
+                        const data = await res.json();
+                        errMsg = `Error: ${data.error || errMsg}`;
+                    } catch {}
+                    removeLoadingIndicator();
+                    appendMessage('assistant', errMsg);
+                    return;
+                }
 
-                if (res.ok) {
-                    sessionId = data.session_id;
-                    appendMessage('assistant', data.response, data.trace);
-                } else {
-                    appendMessage('assistant', `Error: ${data.error || 'Unknown error'}`);
+                // Read SSE stream
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    let idx;
+                    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+                        const raw = buffer.slice(0, idx);
+                        buffer = buffer.slice(idx + 2);
+                        if (!raw.startsWith('data: ')) continue;
+
+                        const event = JSON.parse(raw.slice(6));
+                        if (event.type === 'status') {
+                            addLoadingStep(event.message);
+                        } else if (event.type === 'result') {
+                            removeLoadingIndicator();
+                            sessionId = event.session_id;
+                            appendMessage('assistant', event.response, event.trace);
+                        } else if (event.type === 'error') {
+                            removeLoadingIndicator();
+                            appendMessage('assistant', `Error: ${event.error}`);
+                        }
+                    }
                 }
             } catch (err) {
+                removeLoadingIndicator();
                 appendMessage('assistant', `Connection error: ${err.message}`);
             } finally {
-                setLoading(false);
+                setInputEnabled(true);
                 input.focus();
             }
         });

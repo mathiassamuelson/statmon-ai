@@ -1,5 +1,6 @@
 """Tests for statmon_chat.app — FastAPI routes."""
 
+import json
 import pytest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7,6 +8,16 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from statmon_chat import app as app_module
+
+
+def _parse_sse_events(response_text: str) -> list[dict]:
+    """Parse SSE events from a streaming response."""
+    events = []
+    for chunk in response_text.split("\n\n"):
+        chunk = chunk.strip()
+        if chunk.startswith("data: "):
+            events.append(json.loads(chunk[6:]))
+    return events
 
 
 def _build_test_app():
@@ -100,9 +111,10 @@ class TestChatEndpoint:
             "/api/chat", json={"message": "Hello"}
         )
         assert response.status_code == 200
-        data = response.json()
-        assert data["response"] == "Mock response"
-        assert "session_id" in data
+        events = _parse_sse_events(response.text)
+        result = [e for e in events if e["type"] == "result"][0]
+        assert result["response"] == "Mock response"
+        assert "session_id" in result
 
     def test_chat_empty_message(self, client):
         tc, _ = client
@@ -112,11 +124,14 @@ class TestChatEndpoint:
     def test_chat_session_persistence(self, client):
         tc, mock_chat = client
         r1 = tc.post("/api/chat", json={"message": "Hi"})
-        session_id = r1.json()["session_id"]
+        events1 = _parse_sse_events(r1.text)
+        session_id = [e for e in events1 if e["type"] == "result"][0]["session_id"]
 
         r2 = tc.post(
             "/api/chat",
             json={"message": "Follow up", "session_id": session_id},
         )
-        assert r2.json()["session_id"] == session_id
+        events2 = _parse_sse_events(r2.text)
+        result2 = [e for e in events2 if e["type"] == "result"][0]
+        assert result2["session_id"] == session_id
         assert mock_chat.run_turn.call_count == 2

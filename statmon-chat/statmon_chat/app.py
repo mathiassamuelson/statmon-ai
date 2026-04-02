@@ -3,6 +3,8 @@
 Manages MCP connections, session state, and routes for the chat API.
 """
 
+import asyncio
+import json
 import logging
 import time
 import uuid
@@ -10,7 +12,7 @@ from contextlib import asynccontextmanager
 
 import yaml
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -197,23 +199,44 @@ async def chat(request: Request):
     tools = _build_tools()
     system_prompt = _build_system_prompt()
 
-    trace = TraceCollector()
-    try:
-        response_text = await _anthropic_chat.run_turn(
-            conversation, tools, _mcp_pool, system_prompt,
-            trace=trace, security_tools_config=_security_tools_config,
-        )
-    except Exception:
-        logger.exception("Error in conversation turn")
-        conversation.pop()  # Remove the failed user message
-        return JSONResponse(
-            {"error": "An error occurred processing your request"},
-            status_code=500,
-        )
+    progress_queue: asyncio.Queue = asyncio.Queue()
 
-    return JSONResponse(
-        {"response": response_text, "session_id": session_id, "trace": trace.to_dict()}
-    )
+    async def on_progress(event: dict):
+        await progress_queue.put(event)
+
+    async def event_stream():
+        async def run():
+            trace = TraceCollector()
+            try:
+                response_text = await _anthropic_chat.run_turn(
+                    conversation, tools, _mcp_pool, system_prompt,
+                    trace=trace, security_tools_config=_security_tools_config,
+                    on_progress=on_progress,
+                )
+                await progress_queue.put({
+                    "type": "result",
+                    "response": response_text,
+                    "session_id": session_id,
+                    "trace": trace.to_dict(),
+                })
+            except Exception:
+                logger.exception("Error in conversation turn")
+                conversation.pop()
+                await progress_queue.put({
+                    "type": "error",
+                    "error": "An error occurred processing your request",
+                })
+            await progress_queue.put(None)  # sentinel
+
+        task = asyncio.create_task(run())
+        while True:
+            event = await progress_queue.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+        await task
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/api/nodes")

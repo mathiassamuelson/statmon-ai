@@ -214,7 +214,7 @@ The system prompt is the core of the LLM's understanding. It contains man-page-s
 The system prompt template lives in `statmon-chat/statmon_chat/prompt.txt` and includes:
 
 - **Available Nodes** — dynamically injected at startup based on connected MCP servers
-- **Tool Usage Guidelines** — parallel querying, duration advice, domain vs core-domain guidance
+- **Tool Usage Guidelines** — parallel querying, duration advice, domain vs name guidance
 - **CLI Reference Documentation** — command syntax, arguments, filter syntax (proprietary; not included in the public repository)
 - **Investigation Patterns** — health check, SERVFAIL drill-down, DDoS/PRSD detection, amplification attacks, performance, malware/C2, forensic replay
 
