@@ -20,7 +20,7 @@ from starlette.responses import JSONResponse
 
 from .catalog import load_catalog, ToolRegistry
 from .filter import check_command
-from .cli_executor import run_cli
+from .cli_executor import run_tool
 
 
 DEFAULT_SEARCH_PATHS = [
@@ -124,19 +124,7 @@ async def call_tool(name: str, arguments: dict):
     if not allowed:
         return _envelope(node_name, name, command, status="denied", error=reason)
 
-    # Stage-2 single-segment dispatch. Pipeline support arrives in stage 4.
-    # prepend_args is currently 0- or 1-element for shipped entries; map onto
-    # the existing run_cli(subsystem=...) signature. Stage-3 refactor swaps
-    # this for run_tool(entry, command).
-    subsystem = entry.prepend_args[0] if entry.prepend_args else ""
-    if len(entry.prepend_args) > 1:
-        return _envelope(
-            node_name, name, command,
-            status="error",
-            error="multi-element prepend_args not yet supported (stage 3)",
-        )
-
-    result = await run_cli(entry.binary, subsystem, command, entry.timeout_seconds)
+    result = await run_tool(entry, command)
     result["node"] = node_name
     result["tool"] = name
     result["command"] = command
