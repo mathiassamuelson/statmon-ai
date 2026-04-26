@@ -1,0 +1,80 @@
+- name: getenforce
+  description: Get the current SELinux mode (Enforcing, Permissive, or Disabled).
+  binary: getenforce
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: sestatus
+  description: SELinux status reporting.
+  binary: sestatus
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: getsebool
+  description: Get SELinux boolean values.
+  binary: getsebool
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: seinfo
+  description: Query the SELinux policy.
+  binary: seinfo
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: sesearch
+  description: Search the SELinux policy rules.
+  binary: sesearch
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: semodule
+  description: Manage SELinux policy modules. Read-only list verbs only.
+  binary: semodule
+  rules:
+    deny: []
+    allow:
+      - "-l"
+      - "-l *"
+      - "--list-modules"
+      - "--list-modules *"
+
+- name: semanage
+  description: |
+    SELinux policy management. Read-only `<subject> -l` / `--list` forms
+    only. The mutating `add`, `modify`, `delete` subcommands are not in
+    the allow list and default-deny.
+  binary: semanage
+  rules:
+    deny: []
+    allow:
+      - "boolean -l*"
+      - "boolean --list*"
+      - "port -l*"
+      - "port --list*"
+      - "fcontext -l*"
+      - "fcontext --list*"
+      - "user -l*"
+      - "user --list*"
+      - "login -l*"
+      - "login --list*"
+      - "node -l*"
+      - "node --list*"
+      - "interface -l*"
+      - "interface --list*"
+      - "module -l*"
+      - "module --list*"
+      - "permissive -l*"
+      - "permissive --list*"
+
+- name: audit2why
+  description: Translate SELinux audit messages into a description of why access was denied.
+  binary: audit2why
+  rules:
+    deny: []
+    allow: ["*"]

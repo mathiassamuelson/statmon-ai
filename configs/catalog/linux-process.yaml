@@ -1,0 +1,56 @@
+- name: ps
+  description: |
+    Report running process status. Read-only snapshot.
+    Common forms: `aux`, `-ef`, `-eo pid,user,cmd`.
+  binary: ps
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: pgrep
+  description: |
+    Look up processes by name or other attributes. Signal-sending flags are
+    forbidden; this is read-only.
+  binary: pgrep
+  rules:
+    deny:
+      - "*--signal*"
+      - "*-HUP*"
+      - "*-TERM*"
+      - "*-KILL*"
+    allow: ["*"]
+
+- name: pidof
+  description: Find the PID of a running program by name.
+  binary: pidof
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: pstree
+  description: Display the running processes as a tree.
+  binary: pstree
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: top
+  description: |
+    Snapshot of process activity. Must run in batch mode with a finite
+    iteration count: `-b -n <N>` or `-bn<N>`. Interactive top would hang
+    the executor.
+  binary: top
+  rules:
+    deny: []
+    allow:
+      - "-b -n 1*"
+      - "-b -n *"
+      - "-bn 1*"
+      - "-bn *"
+
+- name: lsof
+  description: List open files and the processes that opened them.
+  binary: lsof
+  rules:
+    deny: []
+    allow: ["*"]

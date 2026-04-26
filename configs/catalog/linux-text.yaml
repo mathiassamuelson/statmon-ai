@@ -1,0 +1,187 @@
+- name: cat
+  description: Concatenate and print files.
+  binary: cat
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: tac
+  description: Print files in reverse order.
+  binary: tac
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: head
+  description: Output the first part of files.
+  binary: head
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: tail
+  description: |
+    Output the last part of files. Follow modes (-f, --follow) are denied
+    — they would block the executor.
+  binary: tail
+  pipe_stage: true
+  rules:
+    deny:
+      - "*-f*"
+      - "*--follow*"
+    allow: ["*"]
+
+- name: grep
+  description: Print lines matching a pattern.
+  binary: grep
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: egrep
+  description: grep -E equivalent.
+  binary: egrep
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: fgrep
+  description: grep -F equivalent.
+  binary: fgrep
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: awk
+  description: |
+    Pattern scanning and processing. Heuristic deny rules block the
+    common shell-out constructs (system(), getline-from-pipe).
+  binary: awk
+  pipe_stage: true
+  rules:
+    deny:
+      - "*system(*"
+      - "*system (*"
+      - "*| getline*"
+      - "*getline*|*"
+      - "*\"|&*"
+      - "*\"|\"*"
+    allow: ["*"]
+
+- name: sed
+  description: |
+    Stream editor. In-place edit (-i, --in-place), the `e` command
+    (shells out), and the `w` command (writes to file) are denied.
+  binary: sed
+  pipe_stage: true
+  rules:
+    deny:
+      - "*-i*"
+      - "*--in-place*"
+      - "*e *"
+      - "*w *"
+    allow: ["*"]
+
+- name: sort
+  description: Sort lines of text. Output-to-file (-o, --output) denied.
+  binary: sort
+  pipe_stage: true
+  rules:
+    deny:
+      - "*-o *"
+      - "*--output*"
+    allow: ["*"]
+
+- name: uniq
+  description: Report or omit repeated lines.
+  binary: uniq
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: wc
+  description: Print newline, word, and byte counts.
+  binary: wc
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: cut
+  description: Remove sections from each line of files.
+  binary: cut
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: tr
+  description: Translate or delete characters.
+  binary: tr
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: column
+  description: Columnate lists.
+  binary: column
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: nl
+  description: Number lines of files.
+  binary: nl
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: fold
+  description: Wrap each input line to fit in specified width.
+  binary: fold
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: xxd
+  description: Make a hexdump or do the reverse.
+  binary: xxd
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: od
+  description: Dump files in octal and other formats.
+  binary: od
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: strings
+  description: Print the strings of printable characters in files.
+  binary: strings
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: rev
+  description: Reverse lines of files.
+  binary: rev
+  pipe_stage: true
+  rules:
+    deny: []
+    allow: ["*"]

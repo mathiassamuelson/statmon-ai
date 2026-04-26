@@ -1,0 +1,66 @@
+- name: docker
+  description: |
+    Docker client. Read-only verbs only — exec, run, build, rm, kill,
+    stop, start, restart, login, push, pull, save, load, image rm,
+    container rm, network rm, volume rm are not in the allow list and
+    default-deny. Streaming verbs (logs -f, stats, events) require
+    bounded forms.
+  binary: docker
+  rules:
+    deny:
+      - "*logs*-f*"
+      - "*logs*--follow*"
+      - "stats"
+      - "events"
+    allow:
+      - "ps"
+      - "ps *"
+      - "images"
+      - "images *"
+      - "image ls*"
+      - "image inspect *"
+      - "container ls*"
+      - "container inspect *"
+      - "inspect *"
+      - "logs *"
+      - "version"
+      - "info"
+      - "system info"
+      - "system df"
+      - "network ls"
+      - "network inspect *"
+      - "volume ls"
+      - "volume inspect *"
+      - "events --since *"
+      - "stats --no-stream*"
+      - "top *"
+      - "diff *"
+      - "port *"
+
+- name: kubectl
+  description: |
+    Kubernetes CLI. Read-only verbs only. --watch is denied since it
+    blocks indefinitely; prefer one-shot get/describe with a label
+    selector. exec, port-forward, cp, apply, delete, create, edit,
+    patch, scale, rollout are not in the allow list and default-deny.
+  binary: kubectl
+  rules:
+    deny:
+      - "*logs*-f*"
+      - "*logs*--follow*"
+      - "*--watch*"
+    allow:
+      - "get *"
+      - "describe *"
+      - "logs *"
+      - "top *"
+      - "version"
+      - "cluster-info"
+      - "cluster-info dump*"
+      - "config view*"
+      - "config get-contexts*"
+      - "config current-context"
+      - "explain *"
+      - "api-resources"
+      - "api-versions"
+      - "auth can-i *"

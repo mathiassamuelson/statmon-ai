@@ -1,0 +1,94 @@
+- name: ls
+  description: List directory contents.
+  binary: ls
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: stat
+  description: Display file or filesystem status.
+  binary: stat
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: du
+  description: Estimate file space usage.
+  binary: du
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: df
+  description: Report filesystem disk space usage.
+  binary: df
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: file
+  description: Determine file type by content inspection.
+  binary: file
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: find
+  description: |
+    Search for files. Action flags that mutate state or shell out are
+    rejected (-delete, -exec, -execdir, -ok, -okdir, -fprint, -fls).
+  binary: find
+  rules:
+    deny:
+      - "*-delete*"
+      - "*-exec *"
+      - "*-execdir *"
+      - "*-ok *"
+      - "*-okdir *"
+      - "*-fprint*"
+      - "*-fls*"
+    allow: ["*"]
+
+- name: readlink
+  description: Print resolved symbolic links or canonical file names.
+  binary: readlink
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: realpath
+  description: Print the resolved absolute path.
+  binary: realpath
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: mount
+  description: |
+    List or show mounts. Mutating modes (--bind, --move, --remount) are
+    denied; bare `mount` lists all mounts.
+  binary: mount
+  rules:
+    deny:
+      - "*--bind*"
+      - "*--move*"
+      - "*--remount*"
+    allow:
+      - ""
+      - "-l*"
+      - "-t *"
+      - "--show-labels*"
+
+- name: findmnt
+  description: Find a filesystem in /etc/fstab, /etc/mtab, or /proc/self/mountinfo.
+  binary: findmnt
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: tree
+  description: List contents of directories in a tree-like format.
+  binary: tree
+  rules:
+    deny: []
+    allow: ["*"]

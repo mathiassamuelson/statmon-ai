@@ -1,0 +1,129 @@
+- name: free
+  description: Display amount of free and used memory in the system.
+  binary: free
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: vmstat
+  description: Report virtual memory statistics.
+  binary: vmstat
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: mpstat
+  description: Report per-processor statistics.
+  binary: mpstat
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: sar
+  description: Collect, report, or save system activity. Report mode is read-only.
+  binary: sar
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: uptime
+  description: Show how long the system has been running.
+  binary: uptime
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: w
+  description: Show who is logged on and what they are doing.
+  binary: w
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: who
+  description: Show who is logged on.
+  binary: who
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: last
+  description: Show listing of last logged-in users.
+  binary: last
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: uname
+  description: Print system information.
+  binary: uname
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: hostnamectl
+  description: Query system hostname and related settings (read-only verbs only).
+  binary: hostnamectl
+  rules:
+    deny: []
+    allow:
+      - ""
+      - "status"
+
+- name: lscpu
+  description: Display information about the CPU architecture.
+  binary: lscpu
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: lsmem
+  description: List the ranges of available memory and their online status.
+  binary: lsmem
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: lspci
+  description: List all PCI devices.
+  binary: lspci
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: lsusb
+  description: List USB devices.
+  binary: lsusb
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: dmidecode
+  description: DMI table decoder — system hardware inventory.
+  binary: dmidecode
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: nproc
+  description: Print the number of available processors.
+  binary: nproc
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: sysctl
+  description: |
+    Read kernel parameters. Write modes (-w, --write) and reload from
+    file (-p) are denied.
+  binary: sysctl
+  rules:
+    deny:
+      - "*-w*"
+      - "*--write*"
+      - "*-p*"
+    allow:
+      - "-a"
+      - "-a *"
+      - "-n *"
+      - "*"

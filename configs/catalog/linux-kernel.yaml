@@ -1,0 +1,13 @@
+- name: lsmod
+  description: Show the status of modules in the Linux kernel.
+  binary: lsmod
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: modinfo
+  description: Show information about a Linux kernel module.
+  binary: modinfo
+  rules:
+    deny: []
+    allow: ["*"]

@@ -1,0 +1,69 @@
+- name: rpm
+  description: |
+    RPM package query and verify. Install (-i), erase (-e), and rebuild
+    verbs are not in the allow list and default-deny.
+  binary: rpm
+  rules:
+    deny: []
+    allow:
+      - "-q*"
+      - "--query*"
+      - "-V"
+      - "-V *"
+      - "--verify"
+      - "--verify *"
+      - "--showrc"
+      - "--eval *"
+
+- name: dnf
+  description: DNF package manager. Read-only verbs only.
+  binary: dnf
+  rules:
+    deny: []
+    allow:
+      - "list"
+      - "list *"
+      - "info *"
+      - "search *"
+      - "repolist"
+      - "repolist *"
+      - "repoquery *"
+      - "history"
+      - "history list"
+      - "history list *"
+      - "history info"
+      - "history info *"
+      - "provides *"
+      - "whatprovides *"
+      - "check"
+      - "check *"
+      - "deplist *"
+      - "module list"
+      - "module list *"
+      - "module info *"
+      - "--version"
+
+- name: yum
+  description: YUM package manager (compat wrapper on modern RHEL). Read-only verbs only.
+  binary: yum
+  rules:
+    deny: []
+    allow:
+      - "list"
+      - "list *"
+      - "info *"
+      - "search *"
+      - "repolist"
+      - "repolist *"
+      - "repoquery *"
+      - "history"
+      - "history list"
+      - "history list *"
+      - "history info"
+      - "history info *"
+      - "provides *"
+      - "whatprovides *"
+      - "check"
+      - "check *"
+      - "deplist *"
+      - "--version"

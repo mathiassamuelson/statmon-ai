@@ -1,0 +1,76 @@
+- name: dpkg
+  description: |
+    Debian package query. Install, remove, configure verbs are denied;
+    only -l/-L/-s/-S/-p/-V query flags are allowed.
+  binary: dpkg
+  rules:
+    deny: []
+    allow:
+      - "-l"
+      - "-l *"
+      - "--list"
+      - "--list *"
+      - "-L *"
+      - "--listfiles *"
+      - "-s *"
+      - "--status *"
+      - "-S *"
+      - "--search *"
+      - "-p *"
+      - "--print-avail *"
+      - "-V"
+      - "-V *"
+      - "--verify"
+      - "--verify *"
+      - "--print-architecture"
+
+- name: apt
+  description: APT high-level package interface. Read-only verbs only.
+  binary: apt
+  rules:
+    deny: []
+    allow:
+      - "list"
+      - "list *"
+      - "show *"
+      - "search *"
+      - "depends *"
+      - "rdepends *"
+      - "policy"
+      - "policy *"
+      - "moo"
+
+- name: apt-cache
+  description: APT package cache query.
+  binary: apt-cache
+  rules:
+    deny: []
+    allow:
+      - "search *"
+      - "show *"
+      - "showpkg *"
+      - "depends *"
+      - "rdepends *"
+      - "policy *"
+      - "pkgnames"
+      - "pkgnames *"
+      - "stats"
+      - "dump"
+      - "dumpavail"
+
+- name: snap
+  description: Snap package query (Ubuntu).
+  binary: snap
+  rules:
+    deny: []
+    allow:
+      - "list"
+      - "list *"
+      - "info *"
+      - "find *"
+      - "services"
+      - "connections"
+      - "connections *"
+      - "version"
+      - "model"
+      - "whoami"

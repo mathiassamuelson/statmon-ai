@@ -1,0 +1,29 @@
+- name: journalctl
+  description: |
+    Query the systemd journal. Follow modes are denied (would block the
+    executor); maintenance verbs that mutate journal state are denied.
+  binary: journalctl
+  rules:
+    deny:
+      - "*--rotate*"
+      - "*--vacuum-*"
+      - "*--flush*"
+      - "*--sync*"
+      - "*--relinquish-var*"
+      - "*--update-catalog*"
+      - "*-f*"
+      - "*--follow*"
+    allow: ["*"]
+
+- name: dmesg
+  description: |
+    Print or control the kernel ring buffer. Buffer-clearing flags
+    (-C, --clear, -c, --read-clear) are denied.
+  binary: dmesg
+  rules:
+    deny:
+      - "*-C*"
+      - "*--clear*"
+      - "*-c*"
+      - "*--read-clear*"
+    allow: ["*"]

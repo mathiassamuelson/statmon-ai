@@ -1,0 +1,119 @@
+- name: ip
+  description: |
+    Show / inspect routing, devices, addresses, neighbors, and tunnels.
+    Read-only subcommands only — mutating verbs (add, del, change, flush,
+    set) are not in the allow list and default-deny.
+  binary: ip
+  rules:
+    deny: []
+    allow:
+      - "addr"
+      - "addr show*"
+      - "a"
+      - "a show*"
+      - "route"
+      - "route show*"
+      - "r"
+      - "r show*"
+      - "link"
+      - "link show*"
+      - "l"
+      - "l show*"
+      - "neigh"
+      - "neigh show*"
+      - "n"
+      - "n show*"
+      - "rule show*"
+      - "tunnel show*"
+      - "-s *"
+      - "-d *"
+      - "-br *"
+      - "-c *"
+
+- name: ss
+  description: |
+    Investigate sockets. Socket-killing flag (-K) is denied.
+  binary: ss
+  rules:
+    deny:
+      - "*-K*"
+    allow: ["*"]
+
+- name: netstat
+  description: Print network connections, routing tables, interface stats.
+  binary: netstat
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: ping
+  description: |
+    Send ICMP echo requests. Must include `-c <count>` to bound the run;
+    unbounded ping would block the executor.
+  binary: ping
+  rules:
+    deny: []
+    allow:
+      - "*-c *"
+
+- name: traceroute
+  description: Print the route packets take to a network host.
+  binary: traceroute
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: mtr
+  description: |
+    Combine traceroute and ping. Must run in report mode with a finite
+    cycle count: `-r` and `-c <N>`.
+  binary: mtr
+  rules:
+    deny: []
+    allow:
+      - "*-r*-c *"
+      - "*-c *-r*"
+
+- name: dig
+  description: DNS lookup utility (BIND).
+  binary: dig
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: nslookup
+  description: Query DNS records.
+  binary: nslookup
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: host
+  description: DNS lookup utility.
+  binary: host
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: arp
+  description: ARP cache inspection. Mutating flags (-d, -s) denied.
+  binary: arp
+  rules:
+    deny:
+      - "*-d*"
+      - "*-s*"
+    allow: ["*"]
+
+- name: tcpdump
+  description: |
+    Packet capture. File-write modes (-w, -W, -G) and post-rotate
+    program (-z) are denied. Always include `-c <N>` to bound packet
+    count; the executor will hard-kill at timeout regardless.
+  binary: tcpdump
+  rules:
+    deny:
+      - "*-w *"
+      - "*-z *"
+      - "*-W *"
+      - "*-G *"
+    allow: ["*"]

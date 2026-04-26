@@ -1,0 +1,33 @@
+- name: systemctl
+  description: |
+    Query systemd unit and system state. Read-only verbs only — start,
+    stop, restart, reload, enable, disable, mask, kill, daemon-reload,
+    edit, set-default, isolate are not in the allow list and
+    default-deny.
+  binary: systemctl
+  timeout_seconds: 15
+  rules:
+    deny: []
+    allow:
+      - "status"
+      - "status *"
+      - "show"
+      - "show *"
+      - "cat *"
+      - "is-active *"
+      - "is-enabled *"
+      - "is-failed *"
+      - "is-system-running"
+      - "list-units"
+      - "list-units *"
+      - "list-unit-files"
+      - "list-unit-files *"
+      - "list-jobs"
+      - "list-dependencies *"
+      - "get-default"
+      - "list-timers"
+      - "list-timers *"
+      - "list-sockets"
+      - "list-sockets *"
+      - "list-machines"
+      - "--version"

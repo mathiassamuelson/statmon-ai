@@ -1,0 +1,40 @@
+- name: lsblk
+  description: List block devices.
+  binary: lsblk
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: blkid
+  description: Locate or print block device attributes.
+  binary: blkid
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: smartctl
+  description: |
+    Control and monitor SMART-enabled storage devices. Self-test commands
+    are denied — this entry is for inspection only.
+  binary: smartctl
+  rules:
+    deny:
+      - "*-t *"
+      - "*--test*"
+      - "*--abort-test*"
+      - "*-X*"
+    allow: ["*"]
+
+- name: iostat
+  description: Report CPU and I/O statistics for devices and partitions.
+  binary: iostat
+  rules:
+    deny: []
+    allow: ["*"]
+
+- name: nfsstat
+  description: List NFS statistics.
+  binary: nfsstat
+  rules:
+    deny: []
+    allow: ["*"]
