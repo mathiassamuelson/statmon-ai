@@ -64,13 +64,14 @@ Runs on each CacheServe/Statmon node. Exposes MCP tools that execute CLI command
 
 ### Configuration
 
-The MCP server is configured via YAML with three sections:
+The MCP server is configured via YAML with two sections:
 
-- **server** — bind address, port, and a unique node name identifier
-- **cacheserve** — path to the CacheServe CLI binary, timeout, and allow/deny rules
-- **statmon** — path to the Statmon CLI binary (`nom-tell`), subsystem name, timeout, and allow/deny rules
+- **server** — bind address, port, and a unique node name identifier.
+- **catalog** — path to the catalog directory, the binary `search_paths`, and per-tool defaults (`timeout_seconds`, `output.max_bytes`).
 
-Config is loaded from (in order): `STATMON_MCP_CONFIG` env var, `~/.config/statmon-mcp/config.yaml`, `/etc/statmon-mcp/config.yaml`. See `configs/mcp-server.example.yaml` for a template.
+Tools themselves are declared as YAML files inside the catalog directory (e.g. `/etc/statmon-mcp/catalog/`). Each file holds one or more tool entries with a `name`, a `binary` (absolute path or bare name resolved against `search_paths`), allow/deny `rules`, optional `prepend_args` for driver-style binaries (e.g. `nom-tell statmon …`), and an inline or file-backed `description`. The catalog is loaded once at startup; binaries are resolved to absolute paths and cached on the entry. The executor never consults `os.environ["PATH"]`. Tools whose binary isn't installed register as unhealthy and return a clear error envelope on call rather than aborting startup, which lets the same catalog ship to both Ubuntu and RHEL hosts.
+
+Config is loaded from (in order): `STATMON_MCP_CONFIG` env var, `~/.config/statmon-mcp/config.yaml`, `/etc/statmon-mcp/config.yaml`. See `configs/mcp-server.example.yaml` for the server template and `configs/catalog/` for the shipped tool entries (statmon plus the Linux v1 sweep). The full catalog spec lives at [`docs/SPEC-catalog-driven-mcp.md`](SPEC-catalog-driven-mcp.md).
 
 ### Command Filter Logic
 
@@ -104,12 +105,21 @@ Each tool takes a single `command` string parameter and returns a JSON envelope 
 - `command` — the command that was executed
 - `status` — `success`, `denied`, or `error`
 - `exit_code` and `execution_time_ms` — for successful executions
-- `result` — the CLI's JSON output (on success)
+- `result` — the captured stdout (parsed as JSON when single-segment and the output is JSON-shaped, otherwise the raw string)
 - `error` — error message (on failure or denial)
+- `truncated` — present when the output cap was hit
+- `pipeline` — present on multi-segment calls; an array of `{tool, args}` pairs
+- `warning` — present when a non-last segment in a pipeline exited non-zero but the last segment succeeded
 
 ### CLI Execution
 
-Commands are executed via `asyncio.create_subprocess_exec` with configurable timeouts. The executor uses `shlex.split()` to correctly handle complex argument strings (including S-expression filter syntax with spaces and parentheses in quoted arguments).
+Commands run via `asyncio.create_subprocess_exec` (no shell, ever). The executor enforces three guarantees the chat side relies on:
+
+- **Hard timeout.** On the catalog entry's `timeout_seconds`, the subprocess is killed (`proc.kill()` followed by `proc.wait()`) rather than just abandoning the await — important for tools that can run unbounded (`tcpdump`, `journalctl --since`, `find /`).
+- **Streaming output cap.** Stdout is read in chunks until the entry's `max_bytes` is reached, then the producer is killed and a truncation marker is appended; the call returns `status: "success"` with `truncated: true` so callers can distinguish bounded output from a real failure. Stderr gets an 8 KB cap in parallel.
+- **Sanitized environment.** Every subprocess receives a fixed `env={"PATH": "/usr/local/sbin:…:/bin", "LANG": "C", "LC_ALL": "C"}` instead of inheriting the server's environment. Stable English output for locale-dependent tools (`ls`, `date`, `df`, `journalctl`), no leaked secrets to anything `iostat`/`mtr` might shell out to.
+
+The argument string is parsed by a sandboxed pipeline grammar. A literal `|` outside any quoted string separates segments; the lead segment is the called tool's args, and subsequent segments are `<tool-name> <args…>` where `<tool-name>` must be a catalog tool flagged `pipe_stage: true` (typically text processors: `grep`, `head`, `tail`, `awk`, `sed`, `wc`, `sort`, `cut`). Unquoted shell metacharacters (`;`, `&`, `>`, `<`, `` ` ``, `$()`, `&&`, `||`, newline) are rejected as a grammar error. Each segment is filter-checked independently. Pipelines are stitched with `os.pipe()` pairs — no shell. The lead's `timeout_seconds` bounds the whole chain; the last segment's `max_bytes` caps captured output; on timeout or cap, every subprocess in the chain is killed.
 
 ---
 

@@ -8,10 +8,10 @@
 
 Two components:
 
-- **`statmon-mcp`** — MCP server running on each DNS node, exposing `cacheserve` and `statmon` CLI tools with configurable allow/deny filtering
-- **`statmon-chat`** — Web app providing the chat UI, connecting to all MCP nodes, and mediating with the Anthropic API
+- **`statmon-mcp`** — MCP server running on each DNS node. Tools are declared as YAML files in a catalog directory; the server registers one MCP tool per entry and dispatches calls through allow/deny rules and a sandboxed pipeline grammar.
+- **`statmon-chat`** — Web app providing the chat UI, connecting to all MCP nodes, and mediating with the Anthropic API.
 
-The MCP server exposes two tools per node — `cacheserve` (DNS server management) and `statmon` (query log analysis via `querystore.*` commands with S-expression filter syntax). Tool names are prefixed with the node name (e.g., `dns_node_a__statmon`) so the LLM can target specific servers.
+Tool names are prefixed with the node name (e.g., `dns_node_a__statmon`, `dns_node_a__journalctl`) so the LLM can target specific servers. The shipped v1 catalog covers `statmon` plus a read-only Linux sysadmin sweep (~70 tools across process, filesystem, disk, network, system, logs, systemd, packages — both deb and rpm — text processors, containers, kernel, and SELinux). The same catalog ships to Ubuntu and RHEL hosts; tools whose binaries aren't present register as unhealthy and return a clear error envelope on call. See [`docs/SPEC-catalog-driven-mcp.md`](docs/SPEC-catalog-driven-mcp.md) for the full catalog spec.
 
 See [docs/design.md](docs/design.md) for the full design specification.
 
@@ -85,7 +85,9 @@ bin/mcp-server.sh
 
 `HOST` and `PORT` environment variables override the defaults (`0.0.0.0:8100`).
 
-The config specifies the node name, binary path, and allow/deny rules. See `configs/mcp-server.example.yaml` for a template. Config is loaded from (in order): `STATMON_MCP_CONFIG` env var, `~/.config/statmon-mcp/config.yaml`, `/etc/statmon-mcp/config.yaml`.
+The config specifies the node name and a `catalog:` block (path, search_paths, defaults). Tool definitions live as YAML files in the catalog directory — one or more entries per file, each naming a binary, allow/deny rules, and an optional long-form description. See [`configs/mcp-server.example.yaml`](configs/mcp-server.example.yaml) for the server template and [`configs/catalog/`](configs/catalog/) for the shipped tool entries (statmon plus the Linux v1 sweep). Config is loaded from (in order): `STATMON_MCP_CONFIG` env var, `~/.config/statmon-mcp/config.yaml`, `/etc/statmon-mcp/config.yaml`.
+
+To migrate an existing single-tool deployment to the catalog model, run `configs/migrate-to-catalog.sh /path/to/old/config.yaml /path/to/new/dir`. It emits a new `config.yaml` with a `catalog:` block plus a `catalog/statmon.yaml` reproducing the old `statmon:` block's binary, timeout, and rules.
 
 Endpoints:
 - `GET /mcp` — SSE endpoint for MCP client connections
@@ -96,7 +98,7 @@ Verify:
 
 ```bash
 curl http://localhost:8100/health
-# {"status":"ok","node":"dns-node-a","tools":["statmon"]}
+# {"status":"ok","node":"dns-node-a","tools":[{"name":"statmon","healthy":true},...]}
 ```
 
 ### Chat App (`statmon-chat`)
