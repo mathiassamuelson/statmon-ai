@@ -19,8 +19,14 @@ from starlette.routing import Mount, Route
 from starlette.responses import JSONResponse
 
 from .catalog import load_catalog, ToolRegistry
-from .filter import check_command
-from .cli_executor import run_tool
+from .filter import check_command, check_paths
+from .cli_executor import run_tool, run_pipeline
+from .pipeline import (
+    parse_pipeline,
+    resolve_pipeline,
+    PipelineGrammarError,
+    PipelineResolutionError,
+)
 
 
 DEFAULT_SEARCH_PATHS = [
@@ -120,11 +126,43 @@ async def call_tool(name: str, arguments: dict):
             error=f"Tool unavailable on this node: {entry.unhealthy_reason}",
         )
 
-    allowed, reason = check_command(command, entry.rules)
-    if not allowed:
-        return _envelope(node_name, name, command, status="denied", error=reason)
+    try:
+        segments = parse_pipeline(command)
+    except PipelineGrammarError as e:
+        return _envelope(node_name, name, command, status="denied", error=str(e))
 
-    result = await run_tool(entry, command)
+    try:
+        stages = resolve_pipeline(entry, segments, registry)
+    except PipelineResolutionError as e:
+        return _envelope(node_name, name, command, status="denied", error=str(e))
+
+    for i, (seg_entry, seg_args) in enumerate(stages):
+        if not seg_entry.healthy:
+            return _envelope(
+                node_name, name, command,
+                status="error",
+                error=f"segment {i} ({seg_entry.name}): {seg_entry.unhealthy_reason}",
+            )
+        allowed, reason = check_command(seg_args, seg_entry.rules)
+        if not allowed:
+            return _envelope(
+                node_name, name, command,
+                status="denied",
+                error=f"segment {i} ({seg_entry.name}): {reason}",
+            )
+        ok, preason = check_paths(seg_args, seg_entry.path_deny)
+        if not ok:
+            return _envelope(
+                node_name, name, command,
+                status="denied",
+                error=f"segment {i} ({seg_entry.name}): {preason}",
+            )
+
+    if len(stages) == 1:
+        result = await run_tool(entry, command)
+    else:
+        result = await run_pipeline(stages)
+
     result["node"] = node_name
     result["tool"] = name
     result["command"] = command

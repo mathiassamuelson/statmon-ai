@@ -5,6 +5,7 @@ Glob matching is case-insensitive using fnmatch.
 """
 
 import fnmatch
+import shlex
 
 
 def glob_match(command: str, pattern: str) -> bool:
@@ -37,3 +38,25 @@ def check_command(command: str, rules: dict) -> tuple[bool, str]:
             return True, "OK"
 
     return False, "Command does not match any allow rule"
+
+
+def check_paths(args: str, deny: list[str]) -> tuple[bool, str]:
+    """Reject any path-shaped token in `args` that matches a deny pattern.
+
+    A "path-shaped token" begins with /, ./, or ../ after shlex tokenization.
+    Returns (True, "OK") if no token matches; (False, reason) on first match.
+    Pattern matching is case-insensitive glob via fnmatch.
+    """
+    if not deny:
+        return True, "OK"
+    try:
+        tokens = shlex.split(args)
+    except ValueError as e:
+        return False, f"path check: failed to tokenize args ({e})"
+    for tok in tokens:
+        if not (tok.startswith("/") or tok.startswith("./") or tok.startswith("../")):
+            continue
+        for pattern in deny:
+            if glob_match(tok, pattern):
+                return False, f"path matches deny rule: {pattern}"
+    return True, "OK"

@@ -1,6 +1,6 @@
 """Tests for statmon_mcp.filter — command allow/deny logic."""
 
-from statmon_mcp.filter import check_command, glob_match
+from statmon_mcp.filter import check_command, check_paths, glob_match
 
 
 class TestGlobMatch:
@@ -120,3 +120,33 @@ class TestCheckCommand:
     def test_no_rules(self):
         allowed, _ = check_command("anything", {})
         assert not allowed
+
+
+class TestCheckPaths:
+    def test_no_deny_passes(self):
+        ok, _ = check_paths("/etc/passwd", [])
+        assert ok
+
+    def test_absolute_path_denied(self):
+        ok, reason = check_paths("/etc/shadow", ["/etc/shadow"])
+        assert not ok
+        assert "/etc/shadow" in reason
+
+    def test_glob_pattern(self):
+        ok, _ = check_paths("/var/log/secure -n 5", ["/var/log/*"])
+        assert not ok
+
+    def test_relative_path_caught(self):
+        ok, _ = check_paths("./secret.key", ["*.key"])
+        assert not ok
+        ok, _ = check_paths("../etc/passwd", ["../etc/*"])
+        assert not ok
+
+    def test_non_path_token_ignored(self):
+        # "etcpasswd" doesn't start with /, ./, or ../ so it's not checked.
+        ok, _ = check_paths("etcpasswd", ["/etc/passwd"])
+        assert ok
+
+    def test_safe_path_allowed(self):
+        ok, _ = check_paths("/var/log/messages", ["/etc/shadow"])
+        assert ok

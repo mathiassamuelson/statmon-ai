@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shlex
 import time
 from typing import TYPE_CHECKING, Sequence
@@ -163,31 +164,54 @@ async def run_pipeline(stages: Sequence[tuple["ToolEntry", str]]) -> dict:
     cap = last_entry.max_bytes
 
     procs: list[asyncio.subprocess.Process] = []
+    pipe_fds: list[int] = []  # parent-side fds we still need to close
     start = time.monotonic()
-    prev_stdout: int | asyncio.StreamReader | None = asyncio.subprocess.DEVNULL
+
+    # Reject unhealthy stages up front before spawning anything.
+    for i, (entry, _) in enumerate(stages):
+        if entry.binary is None:
+            return {
+                "status": "error",
+                "error": f"segment {i} ({entry.name}): {entry.unhealthy_reason}",
+            }
 
     try:
+        prev_read: int = asyncio.subprocess.DEVNULL  # type: ignore[assignment]
         for i, (entry, args) in enumerate(stages):
-            if entry.binary is None:
-                for p in procs:
-                    await _kill(p)
-                return {
-                    "status": "error",
-                    "error": f"segment {i} ({entry.name}): {entry.unhealthy_reason}",
-                }
             argv = _build_argv(entry, args)
+            is_last = i == len(stages) - 1
+
+            if is_last:
+                stdout_target = asyncio.subprocess.PIPE
+                next_read = None
+                write_fd = None
+            else:
+                read_fd, write_fd = os.pipe()
+                stdout_target = write_fd
+                next_read = read_fd
+
             proc = await asyncio.create_subprocess_exec(
                 *argv,
-                stdin=prev_stdout,
-                stdout=asyncio.subprocess.PIPE,
+                stdin=prev_read,
+                stdout=stdout_target,
                 stderr=asyncio.subprocess.PIPE,
                 env=SAFE_ENV,
             )
             procs.append(proc)
-            # Once handed off to the next stage's stdin, our reference to the
-            # prior pipe is no longer ours to read from.
-            prev_stdout = proc.stdout
+
+            # Close fds we handed to the child so EOF propagates correctly.
+            if isinstance(prev_read, int) and prev_read != asyncio.subprocess.DEVNULL:
+                os.close(prev_read)
+            if write_fd is not None:
+                os.close(write_fd)
+
+            prev_read = next_read if next_read is not None else asyncio.subprocess.DEVNULL  # type: ignore[assignment]
     except FileNotFoundError as e:
+        for fd in pipe_fds:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         for p in procs:
             await _kill(p)
         return {"status": "error", "error": f"Binary not found: {e}"}
