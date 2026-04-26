@@ -22,6 +22,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import log_filters
 from .anthropic_client import AnthropicChat
 from .app import load_config
 from .mcp_pool import MCPPool
@@ -75,11 +76,21 @@ def serialize_conversation(conversation: list[dict]) -> list[dict]:
     return result
 
 
+def _count_existing_lines(path: str) -> int:
+    """Count non-empty lines in an existing file, or 0 if missing."""
+    try:
+        with open(path) as f:
+            return sum(1 for line in f if line.strip())
+    except FileNotFoundError:
+        return 0
+
+
 async def run_conversations(
     conversations: list[list[str]],
     output_file: str,
     config: dict,
     delay: float = 0,
+    resume: bool = False,
 ) -> None:
     """Run all conversations and write JSONL output."""
     mcp_pool = MCPPool()
@@ -108,17 +119,39 @@ async def run_conversations(
     )
 
     total_convos = len(conversations)
+    skip = 0
+    if resume:
+        skip = _count_existing_lines(output_file)
+        if skip >= total_convos:
+            print(
+                f"All {total_convos} conversation(s) already complete "
+                f"in {output_file}",
+                file=sys.stderr,
+            )
+            await mcp_pool.disconnect_all()
+            return
+        if skip > 0:
+            print(
+                f"Resuming: skipping {skip} completed conversation(s)",
+                file=sys.stderr,
+            )
+
     print(
-        f"Loaded {total_convos} conversation(s), "
+        f"Loaded {total_convos} conversation(s) "
+        f"({total_convos - skip} remaining), "
         f"{len(mcp_pool.nodes)} node(s) connected, "
         f"{len(tools)} tools available",
         file=sys.stderr,
     )
 
     try:
-        with open(output_file, "w") as out:
+        mode = "a" if resume and skip > 0 else "w"
+        with open(output_file, mode) as out:
             for conv_idx, prompts in enumerate(conversations, 1):
-                if delay > 0 and conv_idx > 1:
+                if conv_idx <= skip:
+                    continue
+
+                if delay > 0 and conv_idx > skip + 1:
                     print(
                         f"  Waiting {delay}s...",
                         file=sys.stderr,
@@ -195,8 +228,10 @@ async def run_conversations(
     finally:
         await mcp_pool.disconnect_all()
 
+    wrote = total_convos - skip
     print(
-        f"\nDone. Wrote {total_convos} conversation(s) to {output_file}",
+        f"\nDone. Wrote {wrote} conversation(s) to {output_file}"
+        f" ({total_convos} total)",
         file=sys.stderr,
     )
 
@@ -227,6 +262,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait between conversations (default: 2)",
     )
     parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from where a previous run left off",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -244,6 +284,7 @@ def main():
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
+    log_filters.install()
 
     if args.config:
         import os
@@ -258,7 +299,11 @@ def main():
     config = load_config()
     asyncio.run(
         run_conversations(
-            conversations, args.output, config, delay=args.delay
+            conversations,
+            args.output,
+            config,
+            delay=args.delay,
+            resume=args.resume,
         )
     )
 

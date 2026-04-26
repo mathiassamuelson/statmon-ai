@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_SECONDS = 15
 HEALTH_CHECK_TIMEOUT_SECONDS = 5
+TOOL_CALL_TIMEOUT_SECONDS = 120
 
 
 @dataclass
@@ -203,7 +204,10 @@ class MCPPool:
 
         node, original_name = self._tool_registry[prefixed_name]
         try:
-            result = await node.session.call_tool(original_name, arguments)
+            result = await asyncio.wait_for(
+                node.session.call_tool(original_name, arguments),
+                timeout=TOOL_CALL_TIMEOUT_SECONDS,
+            )
         except Exception as e:
             logger.warning(
                 f"Tool call failed on {node.name}, attempting reconnect: {e}"
@@ -212,7 +216,10 @@ class MCPPool:
             if not reconnected or prefixed_name not in self._tool_registry:
                 raise
             node, original_name = self._tool_registry[prefixed_name]
-            result = await node.session.call_tool(original_name, arguments)
+            result = await asyncio.wait_for(
+                node.session.call_tool(original_name, arguments),
+                timeout=TOOL_CALL_TIMEOUT_SECONDS,
+            )
 
         if result.content and hasattr(result.content[0], "text"):
             return result.content[0].text

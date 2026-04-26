@@ -227,3 +227,64 @@ class TestRunConversations:
         # Conversations should be independent
         assert mock_chat.run_turn.call_count == 3
         mock_pool.disconnect_all.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_resume_skips_completed(self, tmp_path):
+        """Resume appends to existing file, skipping done conversations."""
+        output_file = str(tmp_path / "output.jsonl")
+        conversations = [["First"], ["Second"], ["Third"]]
+
+        # Pre-populate with 1 completed conversation
+        with open(output_file, "w") as f:
+            f.write(json.dumps({"messages": [], "metadata": {}}) + "\n")
+
+        mock_pool = MagicMock()
+        mock_pool.nodes = {"dns-node-a": MagicMock()}
+        mock_pool.connect_all = AsyncMock()
+        mock_pool.disconnect_all = AsyncMock()
+        mock_pool.build_anthropic_tools.return_value = []
+        mock_pool.get_node_list.return_value = [
+            {"name": "dns-node-a", "status": "connected"}
+        ]
+
+        mock_chat = MagicMock()
+        mock_chat.model = "test-model"
+
+        async def mock_run_turn(
+            conversation, tools, mcp_pool, system_prompt, **kwargs
+        ):
+            conversation.append(
+                {"role": "assistant", "content": "Mock response"}
+            )
+            return "Mock response"
+
+        mock_chat.run_turn = AsyncMock(side_effect=mock_run_turn)
+
+        config = {
+            "nodes": [],
+            "anthropic": {"model": "test-model"},
+        }
+
+        with patch("statmon_chat.cli.MCPPool", return_value=mock_pool):
+            with patch(
+                "statmon_chat.cli.AnthropicChat",
+                return_value=mock_chat,
+            ):
+                with patch(
+                    "statmon_chat.cli.build_system_prompt",
+                    return_value="test prompt",
+                ):
+                    await run_conversations(
+                        conversations,
+                        output_file,
+                        config,
+                        resume=True,
+                    )
+
+        with open(output_file) as f:
+            lines = f.readlines()
+
+        # 1 pre-existing + 2 new
+        assert len(lines) == 3
+        # Only ran 2 conversations (skipped first)
+        assert mock_chat.run_turn.call_count == 2

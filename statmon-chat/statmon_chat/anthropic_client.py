@@ -184,8 +184,8 @@ class AnthropicChat:
                     "tool_use_id": block.id,
                     "content": _truncate(result_text),
                 }
-            except Exception as e:
-                logger.exception(f"Tool call failed: {block.name}")
+            except (Exception, asyncio.CancelledError) as e:
+                logger.warning(f"Tool call failed: {block.name}: {e}")
                 return {
                     "type": "tool_result",
                     "tool_use_id": block.id,

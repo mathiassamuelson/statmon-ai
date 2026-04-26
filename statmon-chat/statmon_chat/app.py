@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from . import log_filters
 from .anthropic_client import AnthropicChat
 from .mcp_pool import MCPPool
 from .security_tools import get_tool_definitions as get_security_tools
@@ -27,44 +28,14 @@ logger = logging.getLogger(__name__)
 SESSION_TTL_SECONDS = 3600  # 1 hour
 
 
-class _SSEDisconnectFilter(logging.Filter):
-    """Downgrade the noisy MCP SSE traceback to a short warning.
-
-    When an MCP server shuts down, the SSE reader in the mcp library logs a
-    full exception traceback at ERROR level ("Error in sse_reader").  This
-    filter intercepts that record and replaces it with a one-line WARNING so
-    the log stays readable.  The reconnect logic in MCPPool handles recovery.
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.funcName == "sse_reader" and record.exc_info:
-            exc = record.exc_info[1]
-            msg = str(exc) if exc else record.getMessage()
-            logger.warning(
-                "MCP node SSE connection lost (%s) — "
-                "will reconnect on next health check or tool call",
-                msg,
-            )
-            return False  # suppress the original noisy record
-        return True
-
-
-logging.getLogger("mcp.client.sse").addFilter(_SSEDisconnectFilter())
+log_filters.install()
 
 
 class _CancelledErrorFilter(logging.Filter):
-    """Suppress CancelledError tracebacks from starlette/uvicorn during reconnect.
-
-    When an MCP SSE connection is torn down for reconnection, the anyio task
-    group cancellation propagates as a CancelledError through starlette's
-    lifespan handler.  Starlette formats the traceback as a plain string and
-    sends it to uvicorn which logs it at ERROR level (no exc_info — just the
-    traceback text in the message body).  This is expected and harmless.
-    """
+    """Suppress CancelledError tracebacks from starlette/uvicorn during reconnect."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        msg = record.getMessage()
-        if "CancelledError" in msg:
+        if "CancelledError" in record.getMessage():
             return False
         return True
 
