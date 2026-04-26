@@ -1,0 +1,14 @@
+- name: statmon
+  description_file: descriptions/statmon.md
+  binary: /usr/local/nom/sbin/nom-tell
+  prepend_args: ["statmon"]
+  timeout_seconds: 60
+  output:
+    max_bytes: 1048576
+  pipe_stage: false
+  rules:
+    deny:
+      - "querystore.reset"
+    allow:
+      - "querystore.*"
+      - "auth-querystore.*"

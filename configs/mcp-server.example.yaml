@@ -1,17 +1,27 @@
 # Production MCP server configuration
-# Copy to /etc/statmon-mcp/config.yaml on each DNS node
+# Copy to /etc/statmon-mcp/config.yaml on each DNS node.
+#
+# Tools are declared as YAML entries under catalog.path. Each entry names a
+# binary (absolute path or bare name resolved via search_paths) and its
+# allow/deny rules. Drop new YAML files into the catalog directory to expose
+# additional tools — no code change required.
 
 server:
   host: "0.0.0.0"
   port: 8100
   node_name: "dns-node-a"    # Change per node
 
-statmon:
-  binary: "/usr/local/nom/sbin/nom-tell"
-  subsystem: "statmon"
-  timeout_seconds: 60
-  rules:
-    deny:
-      - "querystore.reset"
-    allow:
-      - "querystore.*"
+catalog:
+  path: "/etc/statmon-mcp/catalog/"
+  search_paths:
+    - /usr/local/sbin
+    - /usr/local/bin
+    - /usr/sbin
+    - /usr/bin
+    - /sbin
+    - /bin
+    - /usr/local/nom/sbin
+  defaults:
+    timeout_seconds: 30
+    output:
+      max_bytes: 65536
