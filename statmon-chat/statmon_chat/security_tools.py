@@ -2,6 +2,9 @@
 
 Provides whois_lookup, dns_resolve, ip_geolocation, and reverse_dns_lookup
 as local tools that run inside the chat app (no MCP server needed).
+
+Tool descriptions are loaded from descriptions/<tool_name>.md at import time;
+edit those files to refine what the model sees about each tool.
 """
 
 import ipaddress
@@ -10,6 +13,7 @@ import logging
 import re
 import time
 from datetime import datetime
+from pathlib import Path
 
 import dns.name
 import dns.resolver
@@ -28,6 +32,102 @@ DEFAULT_CONFIG = {
 }
 
 WHOIS_RAW_LIMIT = 4096
+
+_DESCRIPTIONS_DIR = Path(__file__).parent / "descriptions"
+
+
+def _load_description(tool_name: str) -> str:
+    """Load a tool description from descriptions/<tool_name>.md.
+
+    Raises FileNotFoundError at import time if a description is missing —
+    we'd rather fail loud at startup than ship a tool with an empty description.
+    """
+    path = _DESCRIPTIONS_DIR / f"{tool_name}.md"
+    return path.read_text()
+
+
+# Schemas live next to the descriptions they belong to. Each entry is the
+# Anthropic-format input_schema; the description is loaded from disk at
+# module import time and joined in `get_tool_definitions()`.
+_TOOL_SCHEMAS: dict[str, dict] = {
+    "whois_lookup": {
+        "type": "object",
+        "properties": {
+            "domain": {
+                "type": "string",
+                "description": (
+                    "Domain name to look up (e.g., 'example.com'). "
+                    "Use the registrable domain, not subdomains."
+                ),
+            },
+        },
+        "required": ["domain"],
+    },
+    "dns_resolve": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "DNS name to resolve (e.g., 'example.com', 'mail.example.com')",
+            },
+            "record_types": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "DNS record types to query. "
+                    "Defaults to ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT'] if not specified."
+                ),
+            },
+        },
+        "required": ["name"],
+    },
+    "ip_geolocation": {
+        "type": "object",
+        "properties": {
+            "ip": {
+                "type": "string",
+                "description": "IPv4 or IPv6 address to look up",
+            },
+        },
+        "required": ["ip"],
+    },
+    "reverse_dns_lookup": {
+        "type": "object",
+        "properties": {
+            "ip": {
+                "type": "string",
+                "description": "IPv4 or IPv6 address for reverse DNS lookup",
+            },
+            "verify_forward": {
+                "type": "boolean",
+                "description": (
+                    "If true, also perform a forward lookup on the PTR result to verify it "
+                    "points back to this IP. Defaults to true."
+                ),
+            },
+        },
+        "required": ["ip"],
+    },
+}
+
+
+# Loaded once at import. If any description is missing, this raises and the
+# module fails to import — better than a silent empty description in production.
+_TOOL_DESCRIPTIONS: dict[str, str] = {
+    name: _load_description(name) for name in _TOOL_SCHEMAS
+}
+
+
+def get_tool_definitions() -> list[dict]:
+    """Return Anthropic-format tool definitions for all security tools."""
+    return [
+        {
+            "name": name,
+            "description": _TOOL_DESCRIPTIONS[name],
+            "input_schema": _TOOL_SCHEMAS[name],
+        }
+        for name in _TOOL_SCHEMAS
+    ]
 
 
 def _merge_config(user_config: dict) -> dict:
@@ -325,96 +425,3 @@ async def dispatch(tool_name: str, arguments: dict, config: dict | None = None) 
     if not handler:
         return json.dumps({"tool": tool_name, "status": "error", "error": f"Unknown security tool: {tool_name}"})
     return await handler(arguments, config)
-
-
-def get_tool_definitions() -> list[dict]:
-    """Return Anthropic-format tool definitions for all security tools."""
-    return [
-        {
-            "name": "whois_lookup",
-            "description": (
-                "Look up WHOIS registration data for a domain. "
-                "Returns registrar, creation/expiration dates, name servers, registrant info, and DNSSEC status. "
-                "Use when checking if a domain is newly registered (DGA/disposable), identifying ownership, "
-                "or verifying legitimate domains."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "domain": {
-                        "type": "string",
-                        "description": "Domain name to look up (e.g., 'example.com'). Use the registrable domain, not subdomains.",
-                    }
-                },
-                "required": ["domain"],
-            },
-        },
-        {
-            "name": "dns_resolve",
-            "description": (
-                "Resolve DNS records for a domain name. "
-                "Returns records by type (A, AAAA, CNAME, MX, NS, TXT). "
-                "Use when checking what IPs a suspicious domain resolves to, finding mail servers, "
-                "examining TXT records for SPF/DKIM, or investigating NS infrastructure."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "DNS name to resolve (e.g., 'example.com', 'mail.example.com')",
-                    },
-                    "record_types": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "DNS record types to query. Defaults to ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT'] if not specified.",
-                    },
-                },
-                "required": ["name"],
-            },
-        },
-        {
-            "name": "ip_geolocation",
-            "description": (
-                "Get geolocation and network information for an IP address. "
-                "Returns country, city, ISP, organization, AS number/name, and reverse DNS. "
-                "Use when identifying where traffic originates, checking if IPs belong to known "
-                "hosting providers or residential ranges, investigating C2 infrastructure by checking "
-                "geolocation of IPs a suspicious domain resolves to (bulletproof hosting, fast-flux "
-                "across many ASes, residential IPs used as proxies)."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "ip": {
-                        "type": "string",
-                        "description": "IPv4 or IPv6 address to look up",
-                    }
-                },
-                "required": ["ip"],
-            },
-        },
-        {
-            "name": "reverse_dns_lookup",
-            "description": (
-                "Perform reverse DNS (PTR) lookup on an IP address with optional forward verification. "
-                "Returns PTR records and whether forward DNS confirms the reverse mapping. "
-                "Use when checking if an IP has legitimate reverse DNS or verifying server identity. "
-                "Legitimate services have matching forward/reverse DNS; C2 infrastructure typically does not."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "ip": {
-                        "type": "string",
-                        "description": "IPv4 or IPv6 address for reverse DNS lookup",
-                    },
-                    "verify_forward": {
-                        "type": "boolean",
-                        "description": "If true, also perform a forward lookup on the PTR result to verify it points back to this IP. Defaults to true.",
-                    },
-                },
-                "required": ["ip"],
-            },
-        },
-    ]
