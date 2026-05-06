@@ -73,26 +73,26 @@ class MCPPool:
                 )
 
     async def _connect_node(self, name: str, url: str) -> None:
-        """Connect to a single MCP node and discover its tools."""
-        # Close existing connection if any
         if name in self._exit_stacks:
             await self._close_node(name)
 
         stack = AsyncExitStack()
-        streams = await stack.enter_async_context(sse_client(url))
-        session = await stack.enter_async_context(ClientSession(*streams))
-        await session.initialize()
+        try:
+            streams = await stack.enter_async_context(sse_client(url))
+            session = await stack.enter_async_context(ClientSession(*streams))
+            await session.initialize()
+            tools_response = await session.list_tools()
+        except BaseException:
+            try:
+                await stack.aclose()
+            except BaseException:
+                pass
+            raise
 
-        tools_response = await session.list_tools()
-        node = NodeConnection(
-            name=name,
-            mcp_url=url,
-            session=session,
-            tools=tools_response.tools,
-        )
+        # commit only after success
+        node = NodeConnection(name=name, mcp_url=url, session=session, tools=tools_response.tools)
         self._nodes[name] = node
         self._exit_stacks[name] = stack
-
         for tool in tools_response.tools:
             prefixed = f"{name.replace('-', '_')}__{tool.name}"
             self._tool_registry[prefixed] = (node, tool.name)
@@ -131,7 +131,7 @@ class MCPPool:
             )
             logger.info(f"Reconnected to {name}")
             return True
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             logger.warning(f"Reconnection failed for {name}")
             await self._close_node(name)
             return False
