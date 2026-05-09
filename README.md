@@ -31,12 +31,12 @@ bin/chat-server.sh
 
 The helper scripts in `bin/` activate `.venv` and launch the chat app with sensible defaults:
 
-- `bin/chat-server.sh` — starts `statmon-chat` on `127.0.0.1:8443` (override with `HOST`/`PORT`)
+- `bin/chat-server.sh` — starts `copilot` on `127.0.0.1:8443` (override with `HOST`/`PORT`)
 - `bin/chat-cli.sh` — drives automated conversations for LoRA training data generation
 
 ## Repository Structure
 
-- **`statmon-chat/`** — Chat application (FastAPI + Anthropic API + MCP clients + agent-side investigation tools)
+- **`copilot/`** — Chat application (FastAPI + Anthropic API + MCP clients + agent-side investigation tools)
 - **`docs/`** — Project documentation:
   - [`design.md`](docs/design.md) — Full design specification and architecture
   - `statmon-prompt.txt` — Statmon Querystore CLI reference (proprietary; not in public repo)
@@ -57,15 +57,15 @@ Or manually:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ./statmon-chat
+pip install -e ./copilot
 ```
 
 ### Run
 
-Point the chat app at a config file via `STATMON_CHAT_CONFIG`, then launch:
+Point the chat app at a config file via `COPILOT_CONFIG`, then launch:
 
 ```bash
-export STATMON_CHAT_CONFIG=~/.config/statmon-chat/config.yaml
+export COPILOT_CONFIG=~/.config/copilot/config.yaml
 export ANTHROPIC_API_KEY=sk-ant-...
 bin/chat-server.sh
 ```

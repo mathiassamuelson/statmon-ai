@@ -47,10 +47,10 @@ def load_config() -> dict:
     import os
     from pathlib import Path
 
-    config_path = os.environ.get("STATMON_CHAT_CONFIG")
+    config_path = os.environ.get("COPILOT_CONFIG")
     if not config_path:
-        user_path = Path.home() / ".config" / "statmon-chat" / "config.yaml"
-        config_path = str(user_path) if user_path.exists() else "/etc/statmon-chat/config.yaml"
+        user_path = Path.home() / ".config" / "copilot" / "config.yaml"
+        config_path = str(user_path) if user_path.exists() else "/etc/copilot/config.yaml"
     with open(config_path) as f:
         return yaml.safe_load(f)
 

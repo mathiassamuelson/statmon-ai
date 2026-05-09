@@ -1,4 +1,4 @@
-"""Tests for statmon_chat.security_tools — domain/IP investigation tools."""
+"""Tests for copilot.security_tools — domain/IP investigation tools."""
 
 import json
 from datetime import datetime
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 
-from statmon_chat.security_tools import (
+from copilot.security_tools import (
     SECURITY_TOOL_NAMES,
     dispatch,
     get_tool_definitions,
@@ -89,7 +89,7 @@ class TestWhoisLookup:
         mock_result.status = ["clientDeleteProhibited", "clientTransferProhibited"]
         mock_result.text = "Domain Name: EXAMPLE.COM\nRegistrar: Example"
 
-        with patch("statmon_chat.security_tools.whois.whois", return_value=mock_result):
+        with patch("copilot.security_tools.whois.whois", return_value=mock_result):
             result = json.loads(await dispatch("whois_lookup", {"domain": "example.com"}))
 
         assert result["status"] == "success"
@@ -101,7 +101,7 @@ class TestWhoisLookup:
     async def test_domain_not_found(self):
         from whois.parser import WhoisDomainNotFoundError
 
-        with patch("statmon_chat.security_tools.whois.whois", side_effect=WhoisDomainNotFoundError("No match")):
+        with patch("copilot.security_tools.whois.whois", side_effect=WhoisDomainNotFoundError("No match")):
             result = json.loads(await dispatch("whois_lookup", {"domain": "nonexistent.xyz"}))
 
         assert result["status"] == "error"
@@ -133,7 +133,7 @@ class TestWhoisLookup:
         mock_result.status = []
         mock_result.text = "x" * 10000
 
-        with patch("statmon_chat.security_tools.whois.whois", return_value=mock_result):
+        with patch("copilot.security_tools.whois.whois", return_value=mock_result):
             result = json.loads(await dispatch("whois_lookup", {"domain": "example.com"}))
 
         assert result["status"] == "success"
@@ -159,7 +159,7 @@ class TestDnsResolve:
         mock_resolver = MagicMock()
         mock_resolver.resolve = MagicMock(side_effect=mock_resolve)
 
-        with patch("statmon_chat.security_tools._make_resolver", return_value=mock_resolver):
+        with patch("copilot.security_tools._make_resolver", return_value=mock_resolver):
             result = json.loads(await dispatch("dns_resolve", {
                 "name": "example.com", "record_types": ["A", "AAAA", "MX", "TXT"]
             }))
@@ -176,7 +176,7 @@ class TestDnsResolve:
         mock_resolver = MagicMock()
         mock_resolver.resolve = MagicMock(side_effect=dns_module.NXDOMAIN())
 
-        with patch("statmon_chat.security_tools._make_resolver", return_value=mock_resolver):
+        with patch("copilot.security_tools._make_resolver", return_value=mock_resolver):
             result = json.loads(await dispatch("dns_resolve", {
                 "name": "nonexistent.example", "record_types": ["A"]
             }))
@@ -202,7 +202,7 @@ class TestDnsResolve:
         mock_resolver = MagicMock()
         mock_resolver.resolve = MagicMock(side_effect=mock_resolve)
 
-        with patch("statmon_chat.security_tools._make_resolver", return_value=mock_resolver):
+        with patch("copilot.security_tools._make_resolver", return_value=mock_resolver):
             result = json.loads(await dispatch("dns_resolve", {
                 "name": "example.com", "record_types": ["A", "MX"]
             }))
@@ -235,8 +235,8 @@ class TestIpGeolocation:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("statmon_chat.security_tools.httpx.AsyncClient", return_value=mock_client):
-            with patch("statmon_chat.security_tools._make_resolver") as mock_resolver:
+        with patch("copilot.security_tools.httpx.AsyncClient", return_value=mock_client):
+            with patch("copilot.security_tools._make_resolver") as mock_resolver:
                 mock_resolver.return_value.resolve.side_effect = Exception("no PTR")
                 result = json.loads(await dispatch("ip_geolocation", {"ip": "93.184.216.34"}))
 
@@ -248,7 +248,7 @@ class TestIpGeolocation:
 
     @pytest.mark.asyncio
     async def test_private_ip(self):
-        with patch("statmon_chat.security_tools._make_resolver") as mock_resolver:
+        with patch("copilot.security_tools._make_resolver") as mock_resolver:
             mock_resolver.return_value.resolve.side_effect = Exception("no PTR")
             result = json.loads(await dispatch("ip_geolocation", {"ip": "10.0.5.42"}))
 
@@ -272,8 +272,8 @@ class TestIpGeolocation:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("statmon_chat.security_tools.httpx.AsyncClient", return_value=mock_client):
-            with patch("statmon_chat.security_tools._make_resolver") as mock_resolver:
+        with patch("copilot.security_tools.httpx.AsyncClient", return_value=mock_client):
+            with patch("copilot.security_tools._make_resolver") as mock_resolver:
                 mock_resolver.return_value.resolve.side_effect = Exception("no PTR")
                 result = json.loads(await dispatch("ip_geolocation", {"ip": "1.2.3.4"}))
 
@@ -295,8 +295,8 @@ class TestReverseDnsLookup:
         mock_resolver = MagicMock()
         mock_resolver.resolve = MagicMock(side_effect=mock_resolve)
 
-        with patch("statmon_chat.security_tools._make_resolver", return_value=mock_resolver):
-            with patch("statmon_chat.security_tools.dns.reversename.from_address", return_value="4.3.2.1.in-addr.arpa"):
+        with patch("copilot.security_tools._make_resolver", return_value=mock_resolver):
+            with patch("copilot.security_tools.dns.reversename.from_address", return_value="4.3.2.1.in-addr.arpa"):
                 result = json.loads(await dispatch("reverse_dns_lookup", {"ip": "1.2.3.4"}))
 
         assert result["status"] == "success"
@@ -315,8 +315,8 @@ class TestReverseDnsLookup:
         mock_resolver = MagicMock()
         mock_resolver.resolve = MagicMock(side_effect=mock_resolve)
 
-        with patch("statmon_chat.security_tools._make_resolver", return_value=mock_resolver):
-            with patch("statmon_chat.security_tools.dns.reversename.from_address", return_value="4.3.2.1.in-addr.arpa"):
+        with patch("copilot.security_tools._make_resolver", return_value=mock_resolver):
+            with patch("copilot.security_tools.dns.reversename.from_address", return_value="4.3.2.1.in-addr.arpa"):
                 result = json.loads(await dispatch("reverse_dns_lookup", {"ip": "1.2.3.4"}))
 
         assert result["status"] == "success"
@@ -329,8 +329,8 @@ class TestReverseDnsLookup:
         mock_resolver = MagicMock()
         mock_resolver.resolve = MagicMock(side_effect=dns_module.NXDOMAIN())
 
-        with patch("statmon_chat.security_tools._make_resolver", return_value=mock_resolver):
-            with patch("statmon_chat.security_tools.dns.reversename.from_address", return_value="4.3.2.1.in-addr.arpa"):
+        with patch("copilot.security_tools._make_resolver", return_value=mock_resolver):
+            with patch("copilot.security_tools.dns.reversename.from_address", return_value="4.3.2.1.in-addr.arpa"):
                 result = json.loads(await dispatch("reverse_dns_lookup", {"ip": "1.2.3.4"}))
 
         assert result["status"] == "success"
@@ -352,8 +352,8 @@ class TestReverseDnsLookup:
         mock_resolver = MagicMock()
         mock_resolver.resolve = MagicMock(side_effect=mock_resolve)
 
-        with patch("statmon_chat.security_tools._make_resolver", return_value=mock_resolver):
-            with patch("statmon_chat.security_tools.dns.reversename.from_address", return_value="4.3.2.1.in-addr.arpa"):
+        with patch("copilot.security_tools._make_resolver", return_value=mock_resolver):
+            with patch("copilot.security_tools.dns.reversename.from_address", return_value="4.3.2.1.in-addr.arpa"):
                 result = json.loads(await dispatch("reverse_dns_lookup", {
                     "ip": "1.2.3.4", "verify_forward": False
                 }))
@@ -372,14 +372,14 @@ class TestDispatch:
     @pytest.mark.asyncio
     async def test_routes_to_whois(self):
         mock_handler = AsyncMock(return_value='{"status": "success"}')
-        with patch.dict("statmon_chat.security_tools._DISPATCH", {"whois_lookup": mock_handler}):
+        with patch.dict("copilot.security_tools._DISPATCH", {"whois_lookup": mock_handler}):
             await dispatch("whois_lookup", {"domain": "example.com"})
             mock_handler.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_routes_to_dns_resolve(self):
         mock_handler = AsyncMock(return_value='{"status": "success"}')
-        with patch.dict("statmon_chat.security_tools._DISPATCH", {"dns_resolve": mock_handler}):
+        with patch.dict("copilot.security_tools._DISPATCH", {"dns_resolve": mock_handler}):
             await dispatch("dns_resolve", {"name": "example.com"})
             mock_handler.assert_called_once()
 

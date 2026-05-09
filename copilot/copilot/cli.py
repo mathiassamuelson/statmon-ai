@@ -9,8 +9,8 @@ Input file format:
   - Blank line (double newline) separates conversations
 
 Usage:
-  statmon-chat-cli prompts.txt -o output.jsonl
-  statmon-chat-cli prompts.txt -o output.jsonl -c /path/to/config.yaml
+  copilot-cli prompts.txt -o output.jsonl
+  copilot-cli prompts.txt -o output.jsonl -c /path/to/config.yaml
 """
 
 import argparse
@@ -242,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Drive automated conversations for LoRA "
             "training data generation"
         ),
-        prog="statmon-chat-cli",
+        prog="copilot-cli",
     )
     parser.add_argument("input_file", help="Path to prompt file")
     parser.add_argument(
@@ -252,7 +252,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-c",
         "--config",
         default=None,
-        help="Config file path (overrides STATMON_CHAT_CONFIG)",
+        help="Config file path (overrides COPILOT_CONFIG)",
     )
     parser.add_argument(
         "-d",
@@ -289,7 +289,7 @@ def main():
     if args.config:
         import os
 
-        os.environ["STATMON_CHAT_CONFIG"] = args.config
+        os.environ["COPILOT_CONFIG"] = args.config
 
     conversations = parse_input_file(args.input_file)
     if not conversations:

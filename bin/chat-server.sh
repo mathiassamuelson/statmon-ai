@@ -7,8 +7,8 @@ cd "$SCRIPT_DIR"
 
 source .venv/bin/activate
 
-exec uvicorn statmon_chat.app:app \
+exec uvicorn copilot.app:app \
     --host "${HOST:-127.0.0.1}" \
     --port "${PORT:-8443}" \
-    --app-dir statmon-chat \
+    --app-dir copilot \
     "$@"

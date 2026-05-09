@@ -1,4 +1,4 @@
-"""Tests for statmon_chat.app — FastAPI routes."""
+"""Tests for copilot.app — FastAPI routes."""
 
 import json
 import pytest
@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from statmon_chat import app as app_module
+from copilot import app as app_module
 
 
 def _parse_sse_events(response_text: str) -> list[dict]:
@@ -70,7 +70,7 @@ def client():
     app_module._sessions = {}
 
     test_app = _build_test_app()
-    with patch("statmon_chat.app.build_system_prompt", return_value="test prompt"):
+    with patch("copilot.app.build_system_prompt", return_value="test prompt"):
         with TestClient(test_app) as tc:
             yield tc, mock_chat
 

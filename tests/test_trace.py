@@ -1,8 +1,8 @@
-"""Tests for statmon_chat.trace — timing instrumentation."""
+"""Tests for copilot.trace — timing instrumentation."""
 
 import time
 
-from statmon_chat.trace import TraceCollector, Span, RoundTrace, TurnTrace
+from copilot.trace import TraceCollector, Span, RoundTrace, TurnTrace
 
 
 class TestSpan:

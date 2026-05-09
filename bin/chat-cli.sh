@@ -8,4 +8,4 @@ cd "$SCRIPT_DIR"
 
 source .venv/bin/activate
 
-exec python -m statmon_chat.cli "$@"
+exec python -m copilot.cli "$@"

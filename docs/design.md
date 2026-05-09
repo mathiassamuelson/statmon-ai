@@ -8,7 +8,7 @@ The Statmon Aggregator is a natural-language chatbot that enables carrier engine
 
 ```
 ┌──────────────┐       HTTPS        ┌────────────────────────────────────┐
-│   Browser    │◄──────────────────►│   Chat App (statmon-chat)          │
+│   Browser    │◄──────────────────►│   Chat App (copilot)          │
 │  (Laptop)    │                    │                                    │
 └──────────────┘                    │  ┌──────────────────────────────┐  │
                                     │  │  Anthropic API Client        │  │
@@ -52,7 +52,7 @@ The Statmon Aggregator is a natural-language chatbot that enables carrier engine
 | Component | Runs On | Count | Purpose |
 |-----------|---------|-------|---------|
 | `statmon-mcp` | Each DNS node | N (2 for prototype) | MCP server exposing CLI tools |
-| `statmon-chat` | Dedicated VM in VPC | 1 | Web UI + Anthropic API + MCP client |
+| `copilot` | Dedicated VM in VPC | 1 | Web UI + Anthropic API + MCP client |
 
 ---
 
@@ -123,7 +123,7 @@ The argument string is parsed by a sandboxed pipeline grammar. A literal `|` out
 
 ---
 
-## 3. Component: `statmon-chat` (Chat Application)
+## 3. Component: `copilot` (Chat Application)
 
 ### Purpose
 
@@ -137,7 +137,7 @@ Configured via YAML with sections for:
 - **anthropic** — model name and max tokens
 - **nodes** — list of MCP node names and URLs
 
-Config is loaded from (in order): `STATMON_CHAT_CONFIG` env var, `~/.config/statmon-chat/config.yaml`, `/etc/statmon-chat/config.yaml`. See `configs/chat-app.example.yaml` for a template.
+Config is loaded from (in order): `COPILOT_CONFIG` env var, `~/.config/copilot/config.yaml`, `/etc/copilot/config.yaml`. See `configs/chat-app.example.yaml` for a template.
 
 ### MCP Client — Tool Discovery and Routing
 
@@ -221,7 +221,7 @@ GET  /api/health        → Health check
 
 The system prompt is the core of the LLM's understanding. It contains man-page-style documentation for all available commands, query patterns, and operational guidance.
 
-The system prompt template lives in `statmon-chat/statmon_chat/prompt.txt` and includes:
+The system prompt template lives in `copilot/copilot/prompt.txt` and includes:
 
 - **Available Nodes** — dynamically injected at startup based on connected MCP servers
 - **Tool Usage Guidelines** — parallel querying, duration advice, domain vs name guidance
@@ -250,10 +250,10 @@ statmon-ai/
 │       ├── server.py              # MCP server + tool handlers
 │       ├── filter.py              # Command allow/deny logic
 │       └── cli_executor.py        # Subprocess execution (shlex-based)
-├── statmon-chat/                  # Chat application
+├── copilot/                  # Chat application
 │   ├── Dockerfile
 │   ├── pyproject.toml
-│   ├── statmon_chat/
+│   ├── copilot/
 │   │   ├── __init__.py
 │   │   ├── app.py                 # FastAPI web app
 │   │   ├── mcp_pool.py            # MCP client pool + tool registry
@@ -301,12 +301,12 @@ The production config points `binary` at the real CLI paths, which are bind-moun
 **On the chat VM:**
 ```bash
 docker run -d \
-  --name statmon-chat \
+  --name copilot \
   --restart unless-stopped \
   -e ANTHROPIC_API_KEY=sk-ant-... \
-  -v /etc/statmon-chat/config.yaml:/etc/statmon-chat/config.yaml:ro \
+  -v /etc/copilot/config.yaml:/etc/copilot/config.yaml:ro \
   -p 8443:8443 \
-  statmon-chat:latest
+  copilot:latest
 ```
 
 ### docker-compose (Development)
@@ -334,7 +334,7 @@ docker run -d \
 - Dockerfile and container verification
 
 ### Milestone 2: Chat App with Tool Routing ✓
-- `statmon-chat` with MCP client pool
+- `copilot` with MCP client pool
 - Dockerfile for the chat app
 - Tool discovery and prefixed naming across nodes
 - Anthropic API conversation loop with tool calls

@@ -1,11 +1,11 @@
-"""Tests for statmon_chat.cli — input parsing and serialization."""
+"""Tests for copilot.cli — input parsing and serialization."""
 
 import json
 import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from statmon_chat.cli import (
+from copilot.cli import (
     parse_input_file,
     serialize_conversation,
     run_conversations,
@@ -195,13 +195,13 @@ class TestRunConversations:
             "anthropic": {"model": "test-model"},
         }
 
-        with patch("statmon_chat.cli.MCPPool", return_value=mock_pool):
+        with patch("copilot.cli.MCPPool", return_value=mock_pool):
             with patch(
-                "statmon_chat.cli.AnthropicChat",
+                "copilot.cli.AnthropicChat",
                 return_value=mock_chat,
             ):
                 with patch(
-                    "statmon_chat.cli.build_system_prompt",
+                    "copilot.cli.build_system_prompt",
                     return_value="test prompt",
                 ):
                     await run_conversations(
@@ -265,13 +265,13 @@ class TestRunConversations:
             "anthropic": {"model": "test-model"},
         }
 
-        with patch("statmon_chat.cli.MCPPool", return_value=mock_pool):
+        with patch("copilot.cli.MCPPool", return_value=mock_pool):
             with patch(
-                "statmon_chat.cli.AnthropicChat",
+                "copilot.cli.AnthropicChat",
                 return_value=mock_chat,
             ):
                 with patch(
-                    "statmon_chat.cli.build_system_prompt",
+                    "copilot.cli.build_system_prompt",
                     return_value="test prompt",
                 ):
                     await run_conversations(

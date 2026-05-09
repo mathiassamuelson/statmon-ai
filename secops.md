@@ -20,7 +20,7 @@ Add domain and IP investigation tools directly to the chat app so that Claude ca
 
 ## Architecture Decision
 
-These tools are **built directly into the chat app** (`statmon-chat`), not as a separate MCP server. Rationale:
+These tools are **built directly into the chat app** (`copilot`), not as a separate MCP server. Rationale:
 
 - Domain/IP lookups are HTTP API calls — they don't need to run on any specific node
 - No extra container to deploy, monitor, or configure
@@ -31,7 +31,7 @@ Web search is enabled via the Anthropic API's built-in web search tool for open-
 
 ## Implementation
 
-### New Module: `statmon-chat/statmon_chat/security_tools.py`
+### New Module: `copilot/copilot/security_tools.py`
 
 This module implements the tool execution functions. Each function takes structured input and returns a JSON string, consistent with how MCP tool results are returned.
 
@@ -267,7 +267,7 @@ Enable the Anthropic API's built-in web search tool alongside the custom tools.
 
 ### Tool Registration in the Chat App
 
-Modify `statmon-chat/statmon_chat/app.py` to register the security tools alongside the MCP-discovered tools.
+Modify `copilot/copilot/app.py` to register the security tools alongside the MCP-discovered tools.
 
 **Approach:**
 - Create a function in `security_tools.py` that returns the Anthropic-format tool definitions (list of dicts with `name`, `description`, `input_schema`)
@@ -287,7 +287,7 @@ else:
 
 ### System Prompt Updates
 
-Add a new section to `statmon-chat/statmon_chat/prompt.txt` documenting the security investigation tools.
+Add a new section to `copilot/copilot/prompt.txt` documenting the security investigation tools.
 
 **Add after the "Investigation Patterns" section:**
 
@@ -378,7 +378,7 @@ You have direct access to the following investigation tools (these do not target
 
 ### Dependencies
 
-Add to `statmon-chat/pyproject.toml`:
+Add to `copilot/pyproject.toml`:
 ```
 "python-whois",
 "dnspython",
@@ -390,7 +390,7 @@ Add to `statmon-chat/pyproject.toml`:
 Add an optional `security_tools` section to the chat app config:
 
 ```yaml
-# In /etc/statmon-chat/config.yaml
+# In /etc/copilot/config.yaml
 security_tools:
   dns_resolver: "system"          # "system", "8.8.8.8", "1.1.1.1"
   whois_timeout_seconds: 10

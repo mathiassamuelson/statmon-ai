@@ -1,5 +1,5 @@
 [project]
-name = "statmon-chat"
+name = "copilot"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,11 +15,11 @@ dependencies = [
 ]
 
 [project.scripts]
-statmon-chat-cli = "statmon_chat.cli:main"
+copilot-cli = "copilot.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["statmon_chat*"]
+include = ["copilot*"]

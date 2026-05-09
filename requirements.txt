@@ -1,5 +1,5 @@
 # Editable installs of project components
--e ./statmon-chat
+-e ./copilot
 
 # Development tools
 pytest>=7.4.0

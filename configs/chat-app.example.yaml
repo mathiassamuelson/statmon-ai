@@ -1,5 +1,5 @@
 # Production chat application configuration
-# Copy to /etc/statmon-chat/config.yaml on the chat VM
+# Copy to /etc/copilot/config.yaml on the chat VM
 
 server:
   host: "0.0.0.0"
@@ -10,8 +10,8 @@ anthropic:
   max_tokens: 4096
 
 # Optional: path to a custom prompt template file (system prompt).
-# Defaults to the bundled statmon_chat/prompt.txt.
-# prompt_path: "/path/to/statmon-ai-proprietary/statmon-chat/statmon_chat/prompt.txt"
+# Defaults to the bundled copilot/prompt.txt.
+# prompt_path: "/path/to/statmon-ai-proprietary/copilot/copilot/prompt.txt"
 
 nodes:
   - name: "dns-node-a"

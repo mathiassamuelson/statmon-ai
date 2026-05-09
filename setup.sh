@@ -14,7 +14,7 @@ fi
 source .venv/bin/activate
 
 pip install --upgrade pip
-pip install -e ./statmon-chat
+pip install -e ./copilot
 
 echo
 echo "Setup complete. Activate with: source .venv/bin/activate"

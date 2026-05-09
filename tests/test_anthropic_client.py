@@ -1,15 +1,15 @@
-"""Tests for statmon_chat.anthropic_client — conversation loop."""
+"""Tests for copilot.anthropic_client — conversation loop."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
 
-from statmon_chat.anthropic_client import (
+from copilot.anthropic_client import (
     AnthropicChat,
     _truncate,
     _describe_tool_call,
 )
-from statmon_chat.trace import TraceCollector
+from copilot.trace import TraceCollector
 
 
 def _mock_usage(input_tokens=100, output_tokens=50):
@@ -283,7 +283,7 @@ class TestAnthropicChat:
         ) as mock_create:
             mock_create.side_effect = [tool_response, final_response]
             with patch(
-                "statmon_chat.anthropic_client.security_dispatch",
+                "copilot.anthropic_client.security_dispatch",
                 new_callable=AsyncMock,
                 return_value='{"tool": "whois_lookup", "status": "success", "result": {}}',
             ) as mock_sec:

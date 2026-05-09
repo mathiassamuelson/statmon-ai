@@ -1,10 +1,10 @@
-"""Tests for statmon_chat.mcp_pool — tool registry and routing."""
+"""Tests for copilot.mcp_pool — tool registry and routing."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from types import SimpleNamespace
 
-from statmon_chat.mcp_pool import MCPPool
+from copilot.mcp_pool import MCPPool
 
 
 @pytest.fixture
