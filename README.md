@@ -2,16 +2,15 @@
 
 **Goal:** Natural-language chatbot that enables carrier engineers to query across multiple CacheServe DNS servers and their co-located Statmon log collectors from a single interface.
 
-**Platform:** Ubuntu 24.04 | Linode VPC
+**Platform:** macOS / Linux | Linode VPC for deployed MCP nodes
 
 ## Architecture
 
-Two components:
+The chat application connects to one or more MCP servers (running on each DNS node) and mediates between the user and the Anthropic API. MCP servers expose CLI tools — `cacheserve` for DNS server management, `statmon` for query log analysis, and any other binary the operator wraps.
 
-- **`statmon-mcp`** — MCP server running on each DNS node. Tools are declared as YAML files in a catalog directory; the server registers one MCP tool per entry and dispatches calls through allow/deny rules and a sandboxed pipeline grammar.
-- **`statmon-chat`** — Web app providing the chat UI, connecting to all MCP nodes, and mediating with the Anthropic API.
+Tool names are prefixed with the node name (e.g., `dns_node_a__statmon`) so the LLM can target specific servers.
 
-Tool names are prefixed with the node name (e.g., `dns_node_a__statmon`, `dns_node_a__journalctl`) so the LLM can target specific servers. The shipped v1 catalog covers `statmon` plus a read-only Linux sysadmin sweep (~70 tools across process, filesystem, disk, network, system, logs, systemd, packages — both deb and rpm — text processors, containers, kernel, and SELinux). The same catalog ships to Ubuntu and RHEL hosts; tools whose binaries aren't present register as unhealthy and return a clear error envelope on call. See [`docs/SPEC-catalog-driven-mcp.md`](docs/SPEC-catalog-driven-mcp.md) for the full catalog spec.
+The MCP server lives in a separate repository: [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server). Deploy one instance per DNS node, configure the catalog, and point this chat app at the resulting URLs.
 
 See [docs/design.md](docs/design.md) for the full design specification.
 
@@ -25,39 +24,26 @@ cd statmon-ai
 # Setup environment
 ./setup.sh
 
-# Start the MCP server (on a DNS node)
-bin/mcp-server.sh
-
-# Start the chat web server (locally)
+# Start the chat web server
 export ANTHROPIC_API_KEY=sk-ant-...
 bin/chat-server.sh
 ```
 
-The helper scripts in `bin/` activate `.venv` and launch each component with sensible defaults:
+The helper scripts in `bin/` activate `.venv` and launch the chat app with sensible defaults:
 
-- `bin/mcp-server.sh` — starts `statmon-mcp` on `0.0.0.0:8100` (override with `HOST`/`PORT`)
 - `bin/chat-server.sh` — starts `statmon-chat` on `127.0.0.1:8443` (override with `HOST`/`PORT`)
 - `bin/chat-cli.sh` — drives automated conversations for LoRA training data generation
 
-Or run the full stack with Docker Compose:
-
-```bash
-docker compose up
-```
-
 ## Repository Structure
 
-- **`statmon-mcp/`** — MCP server (runs on each DNS node)
-- **`statmon-chat/`** — Chat application (FastAPI + Anthropic API + MCP clients)
+- **`statmon-chat/`** — Chat application (FastAPI + Anthropic API + MCP clients + agent-side investigation tools)
 - **`docs/`** — Project documentation:
   - [`design.md`](docs/design.md) — Full design specification and architecture
-  - [`statmon-prompt.txt`](docs/statmon-prompt.txt) — Statmon Querystore CLI reference (real command syntax)
-  - [`StatmonExplainer.md`](docs/StatmonExplainer.md) — Practical troubleshooting examples and patterns
+  - `statmon-prompt.txt` — Statmon Querystore CLI reference (proprietary; not in public repo)
+  - `StatmonExplainer.md` — Practical troubleshooting examples (proprietary; not in public repo)
 - **`configs/`** — Configuration file templates
 
-## Running without Docker
-
-Both components can be run directly for development or on hosts where Docker isn't available.
+## Running the chat application
 
 ### Install dependencies
 
@@ -71,99 +57,23 @@ Or manually:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ./statmon-mcp -e ./statmon-chat
+pip install -e ./statmon-chat
 ```
 
-### MCP Server (`statmon-mcp`)
+### Run
 
-Point the server at a config file via `STATMON_MCP_CONFIG`, then launch via the helper script:
-
-```bash
-export STATMON_MCP_CONFIG=/etc/statmon-mcp/config.yaml
-bin/mcp-server.sh
-```
-
-`HOST` and `PORT` environment variables override the defaults (`0.0.0.0:8100`).
-
-The config specifies the node name and a `catalog:` block (path, search_paths, defaults). Tool definitions live as YAML files in the catalog directory — one or more entries per file, each naming a binary, allow/deny rules, and an optional long-form description. See [`configs/mcp-server.example.yaml`](configs/mcp-server.example.yaml) for the server template and [`configs/catalog/`](configs/catalog/) for the shipped tool entries (statmon plus the Linux v1 sweep). Config is loaded from (in order): `STATMON_MCP_CONFIG` env var, `~/.config/statmon-mcp/config.yaml`, `/etc/statmon-mcp/config.yaml`.
-
-To migrate an existing single-tool deployment to the catalog model, run `configs/migrate-to-catalog.sh /path/to/old/config.yaml /path/to/new/dir`. It emits a new `config.yaml` with a `catalog:` block plus a `catalog/statmon.yaml` reproducing the old `statmon:` block's binary, timeout, and rules.
-
-Endpoints:
-- `GET /mcp` — SSE endpoint for MCP client connections
-- `POST /messages/` — MCP message handling
-- `GET /health` — Health check
-
-Verify:
+Point the chat app at a config file via `STATMON_CHAT_CONFIG`, then launch:
 
 ```bash
-curl http://localhost:8100/health
-# {"status":"ok","node":"dns-node-a","tools":[{"name":"statmon","healthy":true},...]}
-```
-
-### Chat App (`statmon-chat`)
-
-The chat app requires an Anthropic API key and at least one running MCP server to connect to.
-
-```bash
+export STATMON_CHAT_CONFIG=~/.config/statmon-chat/config.yaml
 export ANTHROPIC_API_KEY=sk-ant-...
-export STATMON_CHAT_CONFIG=/etc/statmon-chat/config.yaml
 bin/chat-server.sh
 ```
 
 `HOST` and `PORT` environment variables override the defaults (`127.0.0.1:8443`).
 
-#### Configuration
+The config specifies the Anthropic model, the list of MCP nodes to connect to, the agent-side tool configuration, and the path to the system prompt. See `configs/chat-app.example.yaml` for a template.
 
-The chat config specifies the Anthropic model, the list of MCP node URLs to connect to, and optionally a custom system prompt file. See `configs/chat-app.example.yaml` for a full template. Config is loaded from (in order): `STATMON_CHAT_CONFIG` env var, `~/.config/statmon-chat/config.yaml`, `/etc/statmon-chat/config.yaml`.
+## Setting up an MCP server
 
-Minimal example:
-
-```yaml
-server:
-  host: "0.0.0.0"
-  port: 8443
-
-anthropic:
-  model: "claude-sonnet-4-20250514"
-  max_tokens: 4096
-
-# Optional: absolute path to a custom system prompt template.
-# If omitted, the bundled statmon-chat/statmon_chat/prompt.txt is used.
-# The template may include a {nodes_section} placeholder, which is
-# substituted at startup with the configured MCP node list.
-prompt_path: "/etc/statmon-chat/prompt.txt"
-
-nodes:
-  - name: "dns-node-a"
-    mcp_url: "http://10.0.1.10:8100/mcp"
-  - name: "dns-node-b"
-    mcp_url: "http://10.0.1.11:8100/mcp"
-```
-
-**System prompt.** The system prompt is the authoritative CLI reference and investigation-pattern guide shipped to Claude on every request. By default the app loads `statmon-chat/statmon_chat/prompt.txt` from the installed package. To override it — for example, to ship a proprietary prompt kept outside this repository — set `prompt_path` to an absolute path. The file is read once at startup, so restart the chat server after editing it.
-
-Endpoints:
-- `GET /` — Chat web UI
-- `POST /api/chat` — Send a message, get a response
-- `GET /api/nodes` — List connected MCP nodes
-- `GET /api/health` — Health check
-
-Verify:
-
-```bash
-curl http://localhost:8443/api/health
-# {"status":"ok","nodes_connected":2,"tools_available":2}
-```
-
-## Development
-
-```bash
-pytest                        # Run tests
-black .                       # Format code
-flake8                        # Lint code
-```
-
----
-
-**Last Updated:** March 2026
+Deploy [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server) on each DNS node, configure its catalog with `cacheserve`, `statmon`, and any other tools you want to expose, then list the resulting URLs in the chat app's `nodes` config section.

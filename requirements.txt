@@ -1,5 +1,4 @@
 # Editable installs of project components
--e ./statmon-mcp
 -e ./statmon-chat
 
 # Development tools

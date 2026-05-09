@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-StatMon AI Aggregator — a natural-language chatbot that enables carrier engineers to query across multiple CacheServe DNS servers and co-located Statmon log collectors from a single interface. Uses MCP (Model Context Protocol) to expose CLI tools on each DNS node to an Anthropic-powered chat application.
+StatMon AI Aggregator — a natural-language chatbot that enables carrier engineers to query across multiple CacheServe DNS servers and co-located Statmon log collectors from a single interface. Connects to MCP (Model Context Protocol) servers running on each DNS node and mediates between the user and the Anthropic API.
+
+The MCP server lives in a separate repository: [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server).
 
 ## Commands
 
@@ -12,12 +14,6 @@ StatMon AI Aggregator — a natural-language chatbot that enables carrier engine
 ```bash
 ./setup.sh                              # Full environment setup (creates .venv)
 source .venv/bin/activate               # Activate the virtual environment
-```
-
-### Docker Development
-```bash
-docker compose up                       # Full stack (configs from host /etc paths)
-docker compose up --build               # Rebuild and run
 ```
 
 ### Development Tools
@@ -30,39 +26,38 @@ flake8                        # Lint code
 ## Architecture
 
 ### Components
-- `statmon-mcp/` — MCP server running on each DNS node; exposes `cacheserve` and `statmon` CLI tools with allow/deny command filtering
-- `statmon-chat/` — FastAPI web app; connects to all MCP nodes, routes tool calls, mediates with Anthropic API
+- `statmon-chat/` — FastAPI web app; connects to all MCP nodes, dispatches agent-side investigation tools (whois, dns_resolve, ip_geolocation, reverse_dns_lookup), and mediates with the Anthropic API
 - `docs/` — Design specification and command references
 - `configs/` — Configuration file templates
 
 ### Key Design Decisions
 - MCP tool names are prefixed with node name (e.g., `dns_node_a__statmon`) for multi-node routing
-- Command filtering uses deny-first, then allow-list, then default-deny
-- System prompt includes full CLI reference documentation for CacheServe and Statmon commands
-- CLI execution uses `nom-tell` with subsystem and key=value arg syntax (e.g., `nom-tell statmon querystore.top-clients duration=3600`)
-- `shlex.split()` is used for command parsing to handle S-expression filters with spaces/parentheses
+- Agent-side tools (whois, DNS, geolocation) run locally in the chat app — no MCP server needed for them
+- Tool descriptions are loaded from standalone files (`statmon_chat/descriptions/*.md`) at registration time
+- System prompt focuses on cross-tool orchestration; per-tool syntax lives in tool descriptions
 
 ### Configuration
-Config files are loaded in order: env var → `~/.config/<component>/config.yaml` → `/etc/<component>/config.yaml`
-- MCP server: `STATMON_MCP_CONFIG` env var, or `~/.config/statmon-mcp/config.yaml`, or `/etc/statmon-mcp/config.yaml`
+Config files are loaded in order: env var → `~/.config/statmon-chat/config.yaml` → `/etc/statmon-chat/config.yaml`
 - Chat app: `STATMON_CHAT_CONFIG` env var, or `~/.config/statmon-chat/config.yaml`, or `/etc/statmon-chat/config.yaml`
-- Example configs in `configs/mcp-server.example.yaml` and `configs/chat-app.example.yaml`
+- Example config in `configs/chat-app.example.yaml`
 
 ## Key Files
 
-- `statmon-chat/statmon_chat/prompt.txt` — System prompt template (the authoritative CLI reference + investigation patterns)
+- `statmon-chat/statmon_chat/prompt.txt` — System prompt template (orchestration; per-tool syntax is in description files)
 - `statmon-chat/statmon_chat/system_prompt.py` — Loads prompt.txt and injects dynamic node list via `{nodes_section}`
-- `statmon-mcp/statmon_mcp/cli_executor.py` — Subprocess execution (binary + optional subsystem + command)
-- `statmon-mcp/statmon_mcp/filter.py` — Deny/allow command filtering with glob matching
-- `docs/StatmonExplainer.md` — Practical troubleshooting examples (source of truth for real-world patterns)
-- `docs/statmon-prompt.txt` — Standalone CLI reference (keep in sync with prompt.txt)
+- `statmon-chat/statmon_chat/security_tools.py` — Agent-side investigation tools (whois, dns_resolve, ip_geolocation, reverse_dns_lookup)
+- `statmon-chat/statmon_chat/descriptions/*.md` — Per-tool description files loaded at registration
+- `statmon-chat/statmon_chat/mcp_pool.py` — MCP client pool managing per-node connections
+- `statmon-chat/statmon_chat/anthropic_client.py` — Conversation loop, tool dispatch
+- `docs/StatmonExplainer.md` — Practical troubleshooting examples (proprietary; not in public repo)
+- `docs/statmon-prompt.txt` — Standalone CLI reference (proprietary; not in public repo)
 
 ## Deployment
-- MCP servers run on production DNS nodes inside a Linode VPC (private network)
+- MCP servers run on production DNS nodes inside a Linode VPC (see [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server) for setup)
 - Chat app runs locally on macOS, connecting to remote MCP servers
 - Chat UI renders assistant responses as markdown (marked.js)
 
 ## Key Dependencies
 
-Core: anthropic, mcp, fastapi, uvicorn, pyyaml
+Core: anthropic, mcp, fastapi, uvicorn, pyyaml, python-whois, dnspython, httpx
 Development: pytest, black, flake8
