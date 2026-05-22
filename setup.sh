@@ -1,5 +1,5 @@
 #!/bin/bash
-# Environment setup for statmon-ai.
+# Environment setup for dns-operator-copilot.
 # Creates a Python venv and installs the chat application in editable mode.
 
 set -euo pipefail

@@ -1,63 +1,74 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
-## Project Overview
+## Project overview
 
-StatMon AI Aggregator — a natural-language chatbot that enables carrier engineers to query across multiple CacheServe DNS servers and co-located Statmon log collectors from a single interface. Connects to MCP (Model Context Protocol) servers running on each DNS node and mediates between the user and the Anthropic API.
+DNS Operator Copilot — a chat application for DNS operators. Connects to MCP servers running on each DNS node (exposing Statmon, CacheServe, Linux diagnostics, etc.), runs local investigation tools (WHOIS, DNS resolution, IP geolocation, reverse DNS), and mediates with the Anthropic API.
 
 The MCP server lives in a separate repository: [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server).
 
 ## Commands
 
-### Environment Setup
+### Environment setup
+
 ```bash
-./setup.sh                              # Full environment setup (creates .venv)
-source .venv/bin/activate               # Activate the virtual environment
+./setup.sh                              # Create .venv and install in editable mode
+source .venv/bin/activate
 ```
 
-### Development Tools
+### Development
+
 ```bash
 pytest                        # Run tests
-black .                       # Format code
-flake8                        # Lint code
+black .                       # Format
+flake8                        # Lint
+```
+
+### Run
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export COPILOT_CONFIG=~/.config/copilot/config.yaml
+bin/chat-server.sh
 ```
 
 ## Architecture
 
-### Components
-- `copilot/` — FastAPI web app; connects to all MCP nodes, dispatches agent-side investigation tools (whois, dns_resolve, ip_geolocation, reverse_dns_lookup), and mediates with the Anthropic API
-- `docs/` — Design specification and command references
-- `configs/` — Configuration file templates
+The chat app composes capabilities from three sources, all of which the agent treats uniformly:
 
-### Key Design Decisions
-- MCP tool names are prefixed with node name (e.g., `dns_node_a__statmon`) for multi-node routing
-- Agent-side tools (whois, DNS, geolocation) run locally in the chat app — no MCP server needed for them
-- Tool descriptions are loaded from standalone files (`copilot/descriptions/*.md`) at registration time
-- System prompt focuses on cross-tool orchestration; per-tool syntax lives in tool descriptions
+- **Local tools** — Python functions in `copilot/copilot/security_tools.py`. WHOIS, DNS, IP geolocation, reverse DNS. Run in-process.
+- **MCP-connected tools** — discovered from each configured MCP server at startup. Tool names are prefixed with the node name (e.g., `dns_node_a__statmon`) so the agent can target specific servers.
+- **Anthropic native tools** — currently web search.
 
-### Configuration
-Config files are loaded in order: env var → `~/.config/copilot/config.yaml` → `/etc/copilot/config.yaml`
-- Chat app: `COPILOT_CONFIG` env var, or `~/.config/copilot/config.yaml`, or `/etc/copilot/config.yaml`
-- Example config in `configs/chat-app.example.yaml`
+Each tool's description is loaded from a standalone Markdown file at registration time (not inlined in code). Local tools read from `copilot/copilot/descriptions/<name>.md`; MCP-side tools use the catalog's `description_file:` field.
 
-## Key Files
+The system prompt focuses on cross-tool orchestration. Per-tool syntax lives in the description files.
 
-- `copilot/copilot/prompt.txt` — System prompt template (orchestration; per-tool syntax is in description files)
-- `copilot/copilot/system_prompt.py` — Loads prompt.txt and injects dynamic node list via `{nodes_section}`
-- `copilot/copilot/security_tools.py` — Agent-side investigation tools (whois, dns_resolve, ip_geolocation, reverse_dns_lookup)
-- `copilot/copilot/descriptions/*.md` — Per-tool description files loaded at registration
-- `copilot/copilot/mcp_pool.py` — MCP client pool managing per-node connections
+## Configuration
+
+Config files are loaded in priority order: `COPILOT_CONFIG` env var → `~/.config/copilot/config.yaml` → `/etc/copilot/config.yaml`. See `configs/chat-app.example.yaml` for the schema.
+
+## Key files
+
+- `copilot/copilot/app.py` — FastAPI lifespan and routes
 - `copilot/copilot/anthropic_client.py` — Conversation loop, tool dispatch
-- `docs/StatmonExplainer.md` — Practical troubleshooting examples (proprietary; not in public repo)
-- `docs/statmon-prompt.txt` — Standalone CLI reference (proprietary; not in public repo)
+- `copilot/copilot/mcp_pool.py` — Per-node MCP connections with reconnect logic
+- `copilot/copilot/security_tools.py` — Local tool implementations and registration
+- `copilot/copilot/system_prompt.py` — Prompt template loader; injects node list into `{nodes_section}`
+- `copilot/copilot/prompt.txt` — System prompt template (orchestration; per-tool syntax is in descriptions/)
+- `copilot/copilot/descriptions/*.md` — Per-tool description files
+- `copilot/copilot/cli.py` — Headless CLI for automated conversations
+- `copilot/copilot/trace.py` — Per-request timing and tool-call instrumentation
+- `docs/design.md` — Architecture overview
 
 ## Deployment
-- MCP servers run on production DNS nodes inside a Linode VPC (see [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server) for setup)
-- Chat app runs locally on macOS, connecting to remote MCP servers
-- Chat UI renders assistant responses as markdown (marked.js)
 
-## Key Dependencies
+- MCP servers run on DNS nodes — see [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server) for setup.
+- Chat app runs locally on macOS/Linux, connecting to remote MCP servers over the network.
+- Chat UI renders assistant responses as Markdown (marked.js).
+
+## Key dependencies
 
 Core: anthropic, mcp, fastapi, uvicorn, pyyaml, python-whois, dnspython, httpx
 Development: pytest, black, flake8

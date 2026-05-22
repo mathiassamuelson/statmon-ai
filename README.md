@@ -1,49 +1,41 @@
-# StatMon AI Aggregator
+# DNS Operator Copilot
 
-**Goal:** Natural-language chatbot that enables carrier engineers to query across multiple CacheServe DNS servers and their co-located Statmon log collectors from a single interface.
+A chat application that helps DNS operators investigate query traffic, performance issues, and security incidents on production DNS infrastructure. The operator asks questions in natural language; the application composes answers by calling tools across multiple sources.
 
-**Platform:** macOS / Linux | Linode VPC for deployed MCP nodes
+See [docs/design.md](docs/design.md) for the architecture overview.
 
-## Architecture
+## What it does
 
-The chat application connects to one or more MCP servers (running on each DNS node) and mediates between the user and the Anthropic API. MCP servers expose CLI tools — `cacheserve` for DNS server management, `statmon` for query log analysis, and any other binary the operator wraps.
+DNS Operator Copilot connects to:
 
-Tool names are prefixed with the node name (e.g., `dns_node_a__statmon`) so the LLM can target specific servers.
+- **MCP servers running on each DNS node** — exposes whatever CLIs the operator has wrapped (Statmon for query-log analysis, CacheServe for server state, Linux diagnostics for the surrounding host). The MCP server lives in a separate project: [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server).
+- **Local investigation tools** — WHOIS, DNS resolution, IP geolocation, and reverse DNS, run as in-process Python functions.
+- **Web search** — via the Anthropic API's native web search tool.
 
-The MCP server lives in a separate repository: [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server). Deploy one instance per DNS node, configure the catalog, and point this chat app at the resulting URLs.
+The agent treats all three as equivalent tool sources. From the operator's perspective, it's one chat box.
 
-See [docs/design.md](docs/design.md) for the full design specification.
-
-## Quick Start
+## Quick start
 
 ```bash
-# Clone repository
-git clone https://github.com/mathiassamuelson/statmon-ai.git
-cd statmon-ai
+git clone https://github.com/mathiassamuelson/dns-operator-copilot.git
+cd dns-operator-copilot
 
-# Setup environment
 ./setup.sh
 
-# Start the chat web server
 export ANTHROPIC_API_KEY=sk-ant-...
+export COPILOT_CONFIG=~/.config/copilot/config.yaml
 bin/chat-server.sh
 ```
 
-The helper scripts in `bin/` activate `.venv` and launch the chat app with sensible defaults:
+Then open `http://127.0.0.1:8443`.
 
-- `bin/chat-server.sh` — starts `copilot` on `127.0.0.1:8443` (override with `HOST`/`PORT`)
-- `bin/chat-cli.sh` — drives automated conversations for LoRA training data generation
+Override the bind defaults with `HOST` and `PORT`:
 
-## Repository Structure
+```bash
+HOST=0.0.0.0 PORT=9000 bin/chat-server.sh
+```
 
-- **`copilot/`** — Chat application (FastAPI + Anthropic API + MCP clients + agent-side investigation tools)
-- **`docs/`** — Project documentation:
-  - [`design.md`](docs/design.md) — Full design specification and architecture
-  - `statmon-prompt.txt` — Statmon Querystore CLI reference (proprietary; not in public repo)
-  - `StatmonExplainer.md` — Practical troubleshooting examples (proprietary; not in public repo)
-- **`configs/`** — Configuration file templates
-
-## Running the chat application
+## Setup
 
 ### Install dependencies
 
@@ -60,20 +52,65 @@ source .venv/bin/activate
 pip install -e ./copilot
 ```
 
-### Run
+### Configure
 
-Point the chat app at a config file via `COPILOT_CONFIG`, then launch:
+The chat app looks for its config at, in order:
 
-```bash
-export COPILOT_CONFIG=~/.config/copilot/config.yaml
-export ANTHROPIC_API_KEY=sk-ant-...
-bin/chat-server.sh
+1. `COPILOT_CONFIG` environment variable (full path)
+2. `~/.config/copilot/config.yaml`
+3. `/etc/copilot/config.yaml`
+
+Copy `configs/chat-app.example.yaml` to one of those paths and edit. The required fields are an Anthropic model and a list of MCP nodes; everything else has sensible defaults.
+
+### Deploy the MCP nodes
+
+For each DNS node you want the copilot to see, deploy [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server) and configure its catalog. The chat app discovers the tools each node exposes at startup; just list the node URLs in `nodes:` in your config.
+
+## Helper scripts
+
+- `bin/chat-server.sh` — start the web UI on `127.0.0.1:8443`. Override with `HOST`/`PORT`.
+- `bin/chat-cli.sh` — drive an automated conversation, useful for capturing training data or running scripted investigations.
+
+## Repository structure
+
+```
+dns-operator-copilot/
+├── copilot/                # The chat application
+│   ├── copilot/            # Python package
+│   │   ├── app.py
+│   │   ├── anthropic_client.py
+│   │   ├── mcp_pool.py
+│   │   ├── security_tools.py
+│   │   ├── descriptions/   # Per-tool description files
+│   │   ├── prompt.txt      # System prompt template
+│   │   └── templates/
+│   ├── pyproject.toml
+│   └── Dockerfile
+├── bin/                    # Helper scripts
+├── configs/                # Configuration templates
+├── docs/
+│   └── design.md
+└── tests/
 ```
 
-`HOST` and `PORT` environment variables override the defaults (`127.0.0.1:8443`).
+## Customizing the tool catalog on a DNS node
 
-The config specifies the Anthropic model, the list of MCP nodes to connect to, the agent-side tool configuration, and the path to the system prompt. See `configs/chat-app.example.yaml` for a template.
+The interesting CLIs your DNS operators care about are deployment-specific — Statmon syntax differs by version, your local diagnostic wrappers aren't anyone else's, and so on. Those tool definitions live in the MCP server's catalog (see [cli-mcp-server's documentation](https://github.com/mathiassamuelson/cli-mcp-server)), not in this repository. The chat app's job is to connect, discover what's there, and surface it to the model.
 
-## Setting up an MCP server
+## Customizing local investigation tools
 
-Deploy [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server) on each DNS node, configure its catalog with `cacheserve`, `statmon`, and any other tools you want to expose, then list the resulting URLs in the chat app's `nodes` config section.
+The four local tools (`whois_lookup`, `dns_resolve`, `ip_geolocation`, `reverse_dns_lookup`) live in `copilot/copilot/security_tools.py`. Their descriptions — what the agent reads when deciding *when* and *how* to use each tool — live in `copilot/copilot/descriptions/`. To improve how the agent uses one of these tools, edit the description file.
+
+To add a new local tool, add a schema to `_TOOL_SCHEMAS`, an async handler, an entry in `_DISPATCH`, and a corresponding `<tool_name>.md` description file. The file is loaded at module import time; missing files raise immediately rather than silently shipping a tool without documentation.
+
+## Development
+
+```bash
+pytest                # run the test suite
+black .               # format
+flake8                # lint
+```
+
+## Future direction
+
+The longer arc of this project is to replace the Anthropic API with a locally fine-tuned model — same agent loop, same tools, but no external API call. Training-data capture is already supported via `bin/chat-cli.sh`, which produces multi-turn JSONL covering tool calls and results.

@@ -7,7 +7,6 @@ __pycache__/
 env/
 venv/
 .venv/
-statmon-ai/
 *.egg-info/
 dist/
 build/

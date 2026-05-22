@@ -1,365 +1,170 @@
-# Statmon Aggregator — Design Specification v1
+# DNS Operator Copilot — Design
 
-## 1. Overview
+A chat application that helps DNS operators investigate query traffic, performance issues, and security incidents on production DNS infrastructure. The operator asks questions in natural language; the application composes answers by calling tools across multiple sources.
 
-The Statmon Aggregator is a natural-language chatbot that enables carrier engineers to query across multiple CacheServe DNS servers and their co-located Statmon log collectors from a single interface. It replaces the current workflow of SSH-ing into individual nodes to run CLI queries.
+## 1. The shape of the system
 
-### Architecture Summary
-
-```
-┌──────────────┐       HTTPS        ┌────────────────────────────────────┐
-│   Browser    │◄──────────────────►│   Chat App (copilot)          │
-│  (Laptop)    │                    │                                    │
-└──────────────┘                    │  ┌──────────────────────────────┐  │
-                                    │  │  Anthropic API Client        │  │
-                                    │  │  - Rich system prompt        │  │
-                                    │  │  - Tool definitions from MCP │  │
-                                    │  │  - Conversation state        │  │
-                                    │  └──────────┬───────────────────┘  │
-                                    │             │                      │
-                                    │  ┌──────────▼───────────────────┐  │
-                                    │  │  MCP Client Pool             │  │
-                                    │  │  - Connects to all nodes     │  │
-                                    │  │  - Routes tool calls         │  │
-                                    │  │  - Prefixes tools with node  │  │
-                                    │  └──┬───────────────────────┬───┘  │
-                                    └─────┼───────────────────────┼──────┘
-                                          │                       │
-                                      SSE/HTTP                SSE/HTTP
-                                          │                       │
-                                 ┌────────▼─────────┐   ┌─────────▼────────┐
-                                 │  Node A          │   │  Node B          │
-                                 │  (statmon-mcp)   │   │  (statmon-mcp)   │
-                                 │  ┌────────────┐  │   │  ┌────────────┐  │
-                                 │  │ cacheserve │  │   │  │ cacheserve │  │
-                                 │  │ statmon    │  │   │  │ statmon    │  │
-                                 │  └────────────┘  │   │  └────────────┘  │
-                                 │                  │   │                  │
-                                 │  CacheServe DNS  │   │  CacheServe DNS  │
-                                 │  Statmon Logs    │   │  Statmon Logs    │
-                                 └──────────────────┘   └──────────────────┘
-```
-
-### Deployment Environment
-
-- All components run inside a Linode VPC (private network)
-- MCP servers listen on private IPs only
-- Chat app is the only component reachable from outside (whitelisted IP)
-- Network-level isolation is the initial security model
-
-### Components
-
-| Component | Runs On | Count | Purpose |
-|-----------|---------|-------|---------|
-| `statmon-mcp` | Each DNS node | N (2 for prototype) | MCP server exposing CLI tools |
-| `copilot` | Dedicated VM in VPC | 1 | Web UI + Anthropic API + MCP client |
-
----
-
-## 2. Component: `statmon-mcp` (MCP Server)
-
-### Purpose
-
-Runs on each CacheServe/Statmon node. Exposes MCP tools that execute CLI commands locally, subject to a configurable allow/deny filter.
-
-### Configuration
-
-The MCP server is configured via YAML with two sections:
-
-- **server** — bind address, port, and a unique node name identifier.
-- **catalog** — path to the catalog directory, the binary `search_paths`, and per-tool defaults (`timeout_seconds`, `output.max_bytes`).
-
-Tools themselves are declared as YAML files inside the catalog directory (e.g. `/etc/statmon-mcp/catalog/`). Each file holds one or more tool entries with a `name`, a `binary` (absolute path or bare name resolved against `search_paths`), allow/deny `rules`, optional `prepend_args` for driver-style binaries (e.g. `nom-tell statmon …`), and an inline or file-backed `description`. The catalog is loaded once at startup; binaries are resolved to absolute paths and cached on the entry. The executor never consults `os.environ["PATH"]`. Tools whose binary isn't installed register as unhealthy and return a clear error envelope on call rather than aborting startup, which lets the same catalog ship to both Ubuntu and RHEL hosts.
-
-Config is loaded from (in order): `STATMON_MCP_CONFIG` env var, `~/.config/statmon-mcp/config.yaml`, `/etc/statmon-mcp/config.yaml`. See `configs/mcp-server.example.yaml` for the server template and `configs/catalog/` for the shipped tool entries (statmon plus the Linux v1 sweep). The full catalog spec lives at [`docs/SPEC-catalog-driven-mcp.md`](SPEC-catalog-driven-mcp.md).
-
-### Command Filter Logic
+DNS Operator Copilot is a single FastAPI-based chat application that mediates between an operator and the Anthropic API. The application's distinguishing feature is how it sources its tool capabilities — three layers, all of which the language model treats uniformly:
 
 ```
-function is_allowed(command, rules):
-    # Step 1: Check deny list first (deny takes precedence)
-    for pattern in rules.deny:
-        if glob_match(command, pattern):
-            return DENIED, "Command matches deny rule: {pattern}"
-
-    # Step 2: Must match at least one allow pattern
-    for pattern in rules.allow:
-        if glob_match(command, pattern):
-            return ALLOWED
-
-    # Step 3: Default deny (whitelist approach)
-    return DENIED, "Command does not match any allow rule"
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│                   DNS Operator Copilot (chat app)               │
+│                                                                 │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐  │
+│  │  Local tools    │  │  MCP-connected   │  │  Anthropic     │  │
+│  │  (in-process)   │  │  tools (remote)  │  │  native tools  │  │
+│  │                 │  │                  │  │                │  │
+│  │  whois_lookup   │  │  statmon         │  │  web_search    │  │
+│  │  dns_resolve    │  │  cacheserve      │  │                │  │
+│  │  ip_geolocation │  │  ps, grep, …     │  │                │  │
+│  │  reverse_dns    │  │  (catalog-       │  │                │  │
+│  │                 │  │   driven)        │  │                │  │
+│  └─────────────────┘  └──────────────────┘  └────────────────┘  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+        │                       │                       │
+        ▼                       ▼                       ▼
+   in-process            MCP servers on             Anthropic
+   network calls         each DNS node              API backend
+   (WHOIS, DNS,          (cli-mcp-server)
+   IP geolocation)
 ```
 
-Glob matching rules:
-- `*` matches any sequence of characters (e.g., `*.statistics` matches `cache.statistics`)
-- Matching is case-insensitive
-- Deny rules prevent destructive operations (flush, clear, reset, shutdown, etc.)
-- Allow rules whitelist read-only operations (statistics, status, queries, etc.)
+Three capability sources, one consistent interface:
 
-### MCP Tool Definitions
+| Source | What it is | Where it runs |
+|---|---|---|
+| **Local tools** | Python functions registered with the conversation loop. WHOIS, DNS, IP geolocation, reverse DNS. | In the chat app itself, as direct network calls. |
+| **MCP-connected tools** | Tools exposed by an MCP server reachable over the network. The canonical case is `cli-mcp-server` running on a DNS node, exposing whatever CLIs (Statmon, CacheServe, Linux diagnostics) the operator has wrapped. | On the remote host. The chat app speaks MCP-over-SSE to one or more servers. |
+| **Anthropic native tools** | Tools the Anthropic API itself implements — currently web search. | Inside the Anthropic backend. |
 
-Each tool takes a single `command` string parameter and returns a JSON envelope containing:
-- `node` — which node executed the command
-- `tool` — which tool was called
-- `command` — the command that was executed
-- `status` — `success`, `denied`, or `error`
-- `exit_code` and `execution_time_ms` — for successful executions
-- `result` — the captured stdout (parsed as JSON when single-segment and the output is JSON-shaped, otherwise the raw string)
-- `error` — error message (on failure or denial)
-- `truncated` — present when the output cap was hit
-- `pipeline` — present on multi-segment calls; an array of `{tool, args}` pairs
-- `warning` — present when a non-last segment in a pipeline exited non-zero but the last segment succeeded
+The operator doesn't see these distinctions; the model does, via the tool list assembled at startup. Each layer can grow independently — new local tool: drop a Python function and a description file; new MCP tool: edit a catalog YAML on the DNS node; new native tool: enable it in the Anthropic SDK call.
 
-### CLI Execution
+This design replaces an earlier "Statmon AI Aggregator" architecture that conflated *the chat app* with *the MCP server*. The MCP server moved to a separate generic project — [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server) — once it became clear that wrapping a CLI behind a safety filter is a problem with a life beyond DNS.
 
-Commands run via `asyncio.create_subprocess_exec` (no shell, ever). The executor enforces three guarantees the chat side relies on:
+## 2. Chat application internals
 
-- **Hard timeout.** On the catalog entry's `timeout_seconds`, the subprocess is killed (`proc.kill()` followed by `proc.wait()`) rather than just abandoning the await — important for tools that can run unbounded (`tcpdump`, `journalctl --since`, `find /`).
-- **Streaming output cap.** Stdout is read in chunks until the entry's `max_bytes` is reached, then the producer is killed and a truncation marker is appended; the call returns `status: "success"` with `truncated: true` so callers can distinguish bounded output from a real failure. Stderr gets an 8 KB cap in parallel.
-- **Sanitized environment.** Every subprocess receives a fixed `env={"PATH": "/usr/local/sbin:…:/bin", "LANG": "C", "LC_ALL": "C"}` instead of inheriting the server's environment. Stable English output for locale-dependent tools (`ls`, `date`, `df`, `journalctl`), no leaked secrets to anything `iostat`/`mtr` might shell out to.
+### 2.1 Lifecycle
 
-The argument string is parsed by a sandboxed pipeline grammar. A literal `|` outside any quoted string separates segments; the lead segment is the called tool's args, and subsequent segments are `<tool-name> <args…>` where `<tool-name>` must be a catalog tool flagged `pipe_stage: true` (typically text processors: `grep`, `head`, `tail`, `awk`, `sed`, `wc`, `sort`, `cut`). Unquoted shell metacharacters (`;`, `&`, `>`, `<`, `` ` ``, `$()`, `&&`, `||`, newline) are rejected as a grammar error. Each segment is filter-checked independently. Pipelines are stitched with `os.pipe()` pairs — no shell. The lead's `timeout_seconds` bounds the whole chain; the last segment's `max_bytes` caps captured output; on timeout or cap, every subprocess in the chain is killed.
+At startup, the application:
 
----
+1. Loads its config (Anthropic model, MCP nodes to connect to, prompt path, local-tool config).
+2. Connects to each configured MCP server, discovers the tools it offers, prefixes them with the node name (e.g., `dns_node_a__statmon`).
+3. Registers local tools from `copilot/security_tools.py`, loading each tool's description from `copilot/descriptions/<name>.md`.
+4. Builds the system prompt by injecting the connected-nodes list into a template.
+5. Starts the FastAPI server.
 
-## 3. Component: `copilot` (Chat Application)
+On shutdown, it disconnects from each MCP server cleanly (suppressing the asyncio teardown noise the MCP SDK produces).
 
-### Purpose
+### 2.2 Per-request flow
 
-Web application that provides the chat interface, manages MCP client connections to all nodes, and mediates between the user and the Anthropic API.
+When an operator sends a message:
 
-### Configuration
+1. The chat app retrieves or creates a session, loads its conversation history.
+2. It composes the Anthropic API request: system prompt, conversation history, full tool list (local + MCP-prefixed + native).
+3. The API responds with either a final answer (passed to the UI as Markdown) or one-or-more `tool_use` blocks.
+4. For each `tool_use`: dispatch to the correct handler (local function, MCP `call_tool`, or — for native tools — let the API handle it server-side).
+5. Tool results are collected, appended to the conversation, and the request is re-sent.
+6. Loop until the API stops requesting tools.
 
-Configured via YAML with sections for:
+A request-level trace collector records every API round, every tool call, and timing — surfaced in the UI for inspection.
 
-- **server** — bind address and port
-- **anthropic** — model name and max tokens
-- **nodes** — list of MCP node names and URLs
-
-Config is loaded from (in order): `COPILOT_CONFIG` env var, `~/.config/copilot/config.yaml`, `/etc/copilot/config.yaml`. See `configs/chat-app.example.yaml` for a template.
-
-### MCP Client — Tool Discovery and Routing
-
-On startup, the chat app connects to each MCP server, discovers its tools, and builds a combined tool registry with node-prefixed names:
+### 2.3 Modules
 
 ```
-MCP Server dns-node-a exposes: cacheserve, statmon
-MCP Server dns-node-b exposes: cacheserve, statmon
-
-Combined tool registry for Anthropic API:
-  dns_node_a__cacheserve  → routes to dns-node-a MCP server
-  dns_node_a__statmon     → routes to dns-node-a MCP server
-  dns_node_b__cacheserve  → routes to dns-node-b MCP server
-  dns_node_b__statmon     → routes to dns-node-b MCP server
+copilot/copilot/
+├── app.py                # FastAPI lifespan, routes
+├── anthropic_client.py   # Conversation loop, tool dispatch
+├── mcp_pool.py           # Per-node MCP connections, reconnection logic
+├── security_tools.py     # Local tool implementations + registration
+├── system_prompt.py      # Prompt template loader, node-list injection
+├── trace.py              # Per-request timing and tool-call instrumentation
+├── log_filters.py        # Quiets MCP SDK teardown noise
+├── cli.py                # Headless CLI for automated conversations
+├── prompt.txt            # System prompt template
+├── descriptions/         # One markdown file per local tool
+│   ├── whois_lookup.md
+│   ├── dns_resolve.md
+│   ├── ip_geolocation.md
+│   └── reverse_dns_lookup.md
+└── templates/
+    └── chat.html         # Web UI
 ```
 
-Tool descriptions sent to the Anthropic API include the node name, so the LLM knows which node each tool targets.
+### 2.4 Tool descriptions as documents
 
-### Conversation Loop
+Each tool — local or MCP-side — has its description maintained as a standalone Markdown file rather than as a string literal in code. The agent reads these descriptions to decide *when* and *how* to use each tool.
 
-```
-User sends message
-        │
-        ▼
-Chat app builds Anthropic API request:
-  - system prompt (command documentation)
-  - conversation history
-  - tool definitions (from MCP discovery)
-        │
-        ▼
-Call Anthropic API
-        │
-        ▼
-Response contains tool_use blocks? ──── No ──► Display text to user
-        │
-       Yes
-        │
-        ▼
-For each tool_use block (in parallel):
-  1. Parse node name from tool name prefix
-  2. Route to correct MCP server
-  3. Collect MCP tool result
-        │
-        ▼
-Build tool_result messages
-        │
-        ▼
-Call Anthropic API again (with tool results)
-        │
-        ▼
-Loop until response has no more tool_use blocks
-(max 10 rounds as a safety guard)
-        │
-        ▼
-Display final text to user
-```
+This pattern lives on both sides:
 
-### Request Tracing
+- **Local tools:** `copilot/descriptions/<tool_name>.md` is loaded at module import time. A missing file is a hard import-time error — better than a silent fallback that ships a tool with no documentation.
+- **MCP tools:** the catalog entry's `description_file:` field points at a Markdown file resolved relative to the catalog directory. See [cli-mcp-server's documentation](https://github.com/mathiassamuelson/cli-mcp-server) for the catalog format.
 
-Each chat request is instrumented with timing spans:
-- **API call spans** — duration, token counts (input/output), stop reason
-- **Tool batch spans** — duration of parallel tool execution
-- **Tool call spans** — per-tool duration, CLI execution time, response size, node name
+The system prompt's job, after this design, is *orchestration across tools* — not *teaching the model each tool's syntax*. That responsibility belongs to the per-tool descriptions.
 
-The trace is returned with the chat response and rendered in the UI as a collapsible tree showing the full breakdown of where time was spent.
+## 3. Configuration
 
-### Web Interface
+Loaded in priority order:
 
-Minimal chat UI using FastAPI + Jinja2 templates with markdown rendering (marked.js). Routes:
+1. `COPILOT_CONFIG` environment variable (full path)
+2. `~/.config/copilot/config.yaml`
+3. `/etc/copilot/config.yaml`
 
-```
-GET  /                  → Chat UI
-POST /api/chat          → Send message, get response (with trace)
-GET  /api/nodes         → List connected nodes and their status
-GET  /api/health        → Health check
-```
+See `configs/chat-app.example.yaml` for the full schema. The major sections:
 
----
+- **`anthropic`** — model name, max tokens, API key (via `ANTHROPIC_API_KEY` env var).
+- **`nodes`** — list of MCP servers to connect to. Each has a name (used as the tool prefix) and a URL.
+- **`security_tools`** — per-tool config for local tools (DNS resolver choice, geolocation provider, etc.).
+- **`prompt_path`** — override the default `copilot/prompt.txt`. Production deployments typically point this at a deployment-specific prompt with proprietary DNS-tool references.
 
-## 4. System Prompt
+## 4. The system prompt
 
-The system prompt is the core of the LLM's understanding. It contains man-page-style documentation for all available commands, query patterns, and operational guidance.
+The shipped `prompt.txt` covers orchestration concerns:
 
-The system prompt template lives in `copilot/copilot/prompt.txt` and includes:
+- Cross-node behavior — always query all nodes for site-wide questions, run in parallel.
+- Investigation pacing — short durations for active problems, scope checks before deep queries.
+- Reporting style — lead with the answer, surface disagreements between nodes explicitly.
+- Cross-tool investigation patterns — Suspicious Domain, Suspicious Client, DGA/PRSD Analysis, C2/Botnet Infrastructure. These compose multiple tools and don't fit in any single tool's description.
 
-- **Available Nodes** — dynamically injected at startup based on connected MCP servers
-- **Tool Usage Guidelines** — parallel querying, duration advice, domain vs name guidance
-- **CLI Reference Documentation** — command syntax, arguments, filter syntax (proprietary; not included in the public repository)
-- **Investigation Patterns** — health check, SERVFAIL drill-down, DDoS/PRSD detection, amplification attacks, performance, malware/C2, forensic replay
+Per-tool syntax (which is the bulk of what an operator-focused prompt needs) lives in the tool descriptions, not the prompt.
 
-The chat app injects the current node list into the `{nodes_section}` placeholder at conversation start.
+The placeholder `{nodes_section}` is replaced at startup with the connected-node list. The rest of the prompt is static.
 
-See `README.md` for instructions on providing your own CLI reference documentation.
+## 5. Deployment
 
----
+The chat app is intended to run wherever the operator works — typically a laptop or a single VM with network reachability to the MCP nodes. The MCP nodes themselves run on the DNS infrastructure they observe.
 
-## 5. Project Structure
+- **MCP nodes:** see [cli-mcp-server](https://github.com/mathiassamuelson/cli-mcp-server). One instance per DNS node, configured with a catalog that exposes whichever CLIs that node should make available.
+- **Chat app:** `pip install -e ./copilot`, set `ANTHROPIC_API_KEY` and `COPILOT_CONFIG`, run `bin/chat-server.sh`.
+
+There is no required container orchestration. The chat app is a single process; the MCP servers are independent. Docker is supported for the chat app but not required — most operators will run it natively.
+
+## 6. Future direction
+
+The project's longer arc is to move from the Anthropic API to a locally fine-tuned model, so that operator queries can be answered without an external API call (latency, cost, and data-residency reasons). The architecture above doesn't change: a fine-tuned model would replace the `AnthropicChat` client with a vLLM-served local model, and the tool-dispatch infrastructure stays as-is.
+
+Training-data generation is already supported: `bin/chat-cli.sh` drives automated conversations against the running stack and captures full multi-turn JSONL with tool calls and results.
+
+## 7. Project structure (top level)
 
 ```
-statmon-ai/
+dns-operator-copilot/
 ├── README.md
 ├── CLAUDE.md
-├── docker-compose.yaml            # Full stack: chat + 2 MCP nodes
-├── setup.sh                       # Environment setup script
-├── statmon-mcp/                   # MCP server (runs on each node)
+├── setup.sh
+├── pyproject.toml          # pytest config only
+├── requirements.txt
+├── bin/
+│   ├── chat-server.sh      # Launch the FastAPI server
+│   └── chat-cli.sh         # Headless automation entry
+├── copilot/                # The chat application
 │   ├── Dockerfile
 │   ├── pyproject.toml
-│   └── statmon_mcp/
-│       ├── __init__.py
-│       ├── server.py              # MCP server + tool handlers
-│       ├── filter.py              # Command allow/deny logic
-│       └── cli_executor.py        # Subprocess execution (shlex-based)
-├── copilot/                  # Chat application
-│   ├── Dockerfile
-│   ├── pyproject.toml
-│   ├── copilot/
-│   │   ├── __init__.py
-│   │   ├── app.py                 # FastAPI web app
-│   │   ├── mcp_pool.py            # MCP client pool + tool registry
-│   │   ├── anthropic_client.py    # API client + conversation loop
-│   │   ├── trace.py               # Request-level timing instrumentation
-│   │   ├── system_prompt.py       # Prompt builder
-│   │   ├── prompt.txt             # System prompt template
-│   │   └── templates/
-│   │       └── chat.html          # Web UI (markdown rendering via marked.js)
-│   └── static/
-│       └── style.css
-├── configs/                       # Configuration file templates
-│   ├── mcp-server.example.yaml
+│   └── copilot/            # Python package
+├── configs/
 │   └── chat-app.example.yaml
-├── tests/                         # Test suite
-│   ├── test_cli_executor.py
-│   ├── test_filter.py
-│   ├── test_app.py
-│   ├── test_anthropic_client.py
-│   └── test_mcp_pool.py
-└── docs/
-    └── design.md                  # This document
+├── docs/
+│   └── design.md           # This document
+└── tests/                  # Pytest suite
 ```
-
----
-
-## 6. Docker Deployment
-
-Both components deploy as Docker containers. The MCP server container runs on each DNS node alongside CacheServe/Statmon, and the chat app runs on a dedicated VM (or locally on macOS).
-
-### Production Deployment (Linode VPC)
-
-**On each DNS node:**
-```bash
-docker run -d \
-  --name statmon-mcp \
-  --restart unless-stopped \
-  -v /etc/statmon-mcp/config.yaml:/etc/statmon-mcp/config.yaml:ro \
-  -p 8100:8100 \
-  statmon-mcp:latest
-```
-
-The production config points `binary` at the real CLI paths, which are bind-mounted into the container or available via `--network host`.
-
-**On the chat VM:**
-```bash
-docker run -d \
-  --name copilot \
-  --restart unless-stopped \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  -v /etc/copilot/config.yaml:/etc/copilot/config.yaml:ro \
-  -p 8443:8443 \
-  copilot:latest
-```
-
-### docker-compose (Development)
-
-`docker-compose up` brings up the full stack: two MCP nodes and the chat app on a shared Docker network. Config files are mounted from the host. See `docker-compose.yaml` and `configs/` for details.
-
----
-
-## 7. Key Design Decisions
-
-- **MCP tool names are prefixed with node name** (e.g., `dns_node_a__statmon`) so the LLM can explicitly target specific nodes and issue parallel cross-node queries
-- **Command filtering uses deny-first, then allow-list, then default-deny** — safe by default, with deny rules taking precedence over allow rules
-- **The Anthropic API is used with a rich system prompt** containing full CLI documentation, rather than a fine-tuned model — this allows rapid iteration on the prompt without retraining
-- **Claude acts as the orchestrator** — it handles cross-node correlation, aggregation, and investigation logic; no custom aggregation code is needed in the chat app
-- **Tool results are truncated at 15KB** to prevent context window bloat from large query results
-- **Parallel tool execution** via `asyncio.gather` minimizes latency when querying multiple nodes
-
----
-
-## 8. Prototype Milestones
-
-### Milestone 1: MCP Server with Command Filtering ✓
-- `statmon-mcp` with deny/allow command filtering
-- CLI execution via `nom-tell` with subsystem and key=value syntax
-- Dockerfile and container verification
-
-### Milestone 2: Chat App with Tool Routing ✓
-- `copilot` with MCP client pool
-- Dockerfile for the chat app
-- Tool discovery and prefixed naming across nodes
-- Anthropic API conversation loop with tool calls
-
-### Milestone 3: System Prompt + Investigation Flows ✓
-- Full command documentation in the system prompt
-- Investigation patterns (health check, SERVFAIL, DDoS/PRSD, amplification, performance, malware/C2)
-- Markdown rendering in chat UI
-
-### Milestone 4: Production Deployment ✓
-- MCP servers running on production DNS nodes via `nom-tell`
-- Chat app running locally on macOS connecting to remote MCP servers
-- Config lookup: env var → `~/.config/` → `/etc/`
-
----
-
-## 9. Future Enhancements
-
-- **Domain investigation tools:** WHOIS, DNS resolution, IP geolocation, and web search directly in the chat app (see `docs/domain-investigation-tools-requirements.md`)
-- **Threat intelligence:** VirusTotal, AbuseIPDB, and other API integrations
-- **Authentication:** OIDC/OAuth2 on the MCP servers
-- **Dynamic node discovery:** Service registry or DNS-based discovery
-- **Local LLM:** Self-hosted option using vLLM
-- **Fine-tuned model:** Trained on actual CacheServe/Statmon interactions
-- **Audit logging:** Record all commands executed through the aggregator
-- **Rate limiting:** Prevent the LLM from overwhelming nodes with queries
-- **Streaming responses:** SSE from chat app for real-time token display
-- **Multi-site support:** Extend to query across multiple carrier sites

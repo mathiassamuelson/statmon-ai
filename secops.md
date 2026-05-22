@@ -2,7 +2,7 @@
 
 ## Context
 
-The Statmon AI Aggregator is a natural-language chatbot for carrier engineers to query across multiple CacheServe DNS servers and Statmon log collectors. See `CLAUDE.md` and `docs/design.md` for full project context.
+The Operator Copilot is a natural-language chatbot for carrier engineers to query across multiple CacheServe DNS servers and Statmon log collectors. See `CLAUDE.md` and `docs/design.md` for full project context.
 
 A key use case is SecOps investigation: when Statmon reveals suspicious domains or client IPs (e.g., DGA patterns, NXDOMAIN floods, amplification sources), the engineer currently has to leave the chatbot to manually research those indicators. We want the investigation to stay within the conversation.
 

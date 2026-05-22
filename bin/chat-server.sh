@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the StatMon AI chat web server.
+# Start the DNS Operator Copilot chat web server.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

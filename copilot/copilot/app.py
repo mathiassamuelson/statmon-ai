@@ -1,4 +1,4 @@
-"""FastAPI web application for the Statmon AI chat interface.
+"""FastAPI web application for DNS Operator Copilot.
 
 Manages MCP connections, session state, and routes for the chat API.
 """
@@ -117,7 +117,7 @@ async def lifespan(app: FastAPI):
     await _mcp_pool.disconnect_all()
 
 
-app = FastAPI(title="Statmon AI Aggregator", lifespan=lifespan)
+app = FastAPI(title="DNS Operator Copilot", lifespan=lifespan)
 
 import os
 
